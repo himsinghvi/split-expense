@@ -1,0 +1,14 @@
+# FastAPI 0.115.x is incompatible with Starlette 1.x (Router no longer accepts on_startup).
+# Use FastAPI 0.135+ which targets Starlette 0.46+ / 1.x.
+fastapi==0.136.3
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+jinja2==3.1.4
+python-multipart>=0.0.18
+pydantic>=2.9.0,<3
+pydantic-settings==2.6.1
+openpyxl==3.1.5
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+itsdangerous==2.2.0

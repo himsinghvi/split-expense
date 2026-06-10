@@ -1,0 +1,4 @@
+# Vercel discovers FastAPI via requirements.txt; this pins the ASGI entry when the app
+# lives in the Python package `app/` (avoids picking the wrong main.py).
+[tool.vercel]
+entrypoint = "app.main:app"

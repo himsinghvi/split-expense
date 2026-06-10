@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-5 col-xl-4">
+    <div class="et-hero mb-4">
+      <h1 class="et-hero-title">Sign in</h1>
+      <p class="et-hero-lead mb-0">Use the mobile number you registered with.</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/login" class="et-form-panel">
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="mobile">Mobile</label>
+        <input type="tel" class="form-control form-control-lg" id="mobile" name="mobile" required
+               value="{{ mobile or '' }}" autocomplete="tel" maxlength="20" placeholder="10–15 digits">
+      </div>
+      <div class="mb-4">
+        <label class="form-label fw-semibold" for="password">Password</label>
+        <input type="password" class="form-control form-control-lg" id="password" name="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg w-100">Sign in</button>
+      <p class="small text-center et-muted mt-3 mb-0">No account? <a href="/auth/register">Register</a></p>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Your groups{% endblock %}
+
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<div class="et-hero d-flex flex-column flex-lg-row align-items-lg-end justify-content-lg-between gap-3">
+  <div>
+    <p class="et-eyebrow mb-2">Expense sharing</p>
+    <h1 class="et-hero-title">Your groups</h1>
+    <p class="et-hero-lead">Pick a group to manage the pool, members, and who owes what on each bill.</p>
+  </div>
+  <a href="/groups/new" class="btn btn-primary btn-lg px-4 align-self-start align-self-lg-end shadow-sm">
+    <i class="bi bi-plus-circle me-2"></i>New group
+  </a>
+</div>
+
+{% if not groups %}
+<div class="et-empty">
+  <div class="et-empty-icon"><i class="bi bi-folder2-open"></i></div>
+  <h2 class="h5 fw-bold mb-2">No groups yet</h2>
+  <p class="et-muted mb-4 mx-auto" style="max-width: 22rem;">Create a group for a trip, roommate bills, or any shared event. You can add people and money in the next step.</p>
+  <a href="/groups/new" class="btn btn-primary"><i class="bi bi-plus-lg me-2"></i>Create your first group</a>
+</div>
+{% else %}
+<div class="row g-4">
+  {% for g in groups %}
+  <div class="col-md-6 col-xl-4">
+    <a href="/groups/{{ g.id }}" class="text-decoration-none text-reset d-block h-100 et-card et-card-interactive">
+      <div class="et-card-body h-100 d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+          <div class="rounded-3 p-2 d-inline-flex" style="background: var(--et-accent-soft); color: var(--et-accent);">
+            <i class="bi bi-people-fill fs-5"></i>
+          </div>
+          <i class="bi bi-chevron-right et-muted"></i>
+        </div>
+        <h2 class="h5 fw-bold mb-2" style="letter-spacing: -0.02em;">{{ g.name }}</h2>
+        <p class="small et-muted mb-0 mt-auto">
+          <i class="bi bi-calendar3 me-1"></i>Created {{ g.created_at.strftime('%b %d, %Y') }}
+        </p>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

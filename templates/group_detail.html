@@ -1,0 +1,505 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name }}{% endblock %}
+
+{% macro member_initials(name) -%}
+{%- set t = (name or '') | trim -%}
+{%- set parts = t.split() -%}
+{%- if parts | length >= 2 -%}
+{{ (parts[0][0] ~ parts[-1][0]) | upper }}
+{%- elif t | length >= 2 -%}
+{{ t[:2] | upper }}
+{%- elif t | length == 1 -%}
+{{ t[0] | upper }}
+{%- else -%}
+?
+{%- endif -%}
+{% endmacro %}
+
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<nav class="et-breadcrumb mb-2" aria-label="breadcrumb">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="/groups">Groups</a></li>
+    <li class="breadcrumb-item active text-truncate" style="max-width: 12rem;" aria-current="page">{{ group.name }}</li>
+  </ol>
+</nav>
+
+<header class="mb-4">
+  <h1 class="et-hero-title mb-2">{{ group.name }}</h1>
+  <p class="et-hero-lead mb-0">Pool contributions and per-person splits on every expense.</p>
+</header>
+
+<div class="et-section-nav mb-4">
+  <ul class="nav">
+    <li class="nav-item"><a class="nav-link" href="#balances"><i class="bi bi-pie-chart me-1"></i>Balances</a></li>
+    <li class="nav-item"><a class="nav-link" href="#members"><i class="bi bi-person-plus me-1"></i>Members</a></li>
+    <li class="nav-item"><a class="nav-link" href="#pool"><i class="bi bi-bank me-1"></i>Pool</a></li>
+    <li class="nav-item"><a class="nav-link" href="#expenses"><i class="bi bi-receipt me-1"></i>Expenses</a></li>
+  </ul>
+</div>
+
+<section class="mb-5 pb-1" id="balances">
+  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+    <div>
+      <h2 class="h4 fw-bold mb-1">Balances</h2>
+      <p class="small et-muted mb-0">Pooled in · Spent share · What is left</p>
+    </div>
+  </div>
+
+  {% if not members %}
+  <div class="alert alert-et-warn d-flex align-items-start gap-2 mb-0" role="alert">
+    <i class="bi bi-exclamation-triangle flex-shrink-0 mt-1"></i>
+    <div>Add at least one member before you can record contributions or expenses.</div>
+  </div>
+  {% else %}
+  <div class="alert alert-et-info d-flex align-items-start gap-2 mb-4 py-3" role="note">
+    <i class="bi bi-lightbulb flex-shrink-0 mt-1"></i>
+    <div class="small"><strong>Pooled</strong> is what they put in. <strong class="text-expended">Expended</strong> is their share of all bills. <strong class="text-money-positive">Remaining</strong> is pooled minus expended (red if they are short).</div>
+  </div>
+
+  <div class="et-card mb-4 border-primary border-opacity-25" style="border-width: 2px;">
+    <div class="et-card-body py-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <p class="et-eyebrow mb-0">Group totals</p>
+        <span class="small et-muted">Sum across everyone</span>
+      </div>
+      <div class="row g-4 align-items-end">
+        <div class="col-md-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Total pooled</span>
+            <span class="et-metric-value et-metric-value--pooled fs-4">{{ balance_totals.pooled | money }}</span>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Total expense</span>
+            <span class="et-metric-value et-metric-value--expended fs-4">{{ balance_totals.expended | money }}</span>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Total left</span>
+            <span class="et-metric-value fs-4 {% if balance_totals.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
+              {{ balance_totals.remaining | money }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    {% for b in balances %}
+    <div class="col-md-6 col-xl-4">
+      <div class="et-card h-100">
+        <div class="et-card-body">
+          <div class="d-flex align-items-center gap-3 mb-4">
+            <div class="et-avatar">{{ member_initials(b.name) }}</div>
+            <h3 class="h5 fw-bold mb-0 text-truncate">{{ b.name }}</h3>
+          </div>
+          <div class="row g-3">
+            <div class="col-4">
+              <div class="et-metric">
+                <span class="et-metric-label">Pooled</span>
+                <span class="et-metric-value et-metric-value--pooled">{{ b.contributed | money }}</span>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="et-metric">
+                <span class="et-metric-label">Expended</span>
+                <span class="et-metric-value et-metric-value--expended">{{ b.expended | money }}</span>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="et-metric">
+                <span class="et-metric-label">Left</span>
+                <span class="et-metric-value {% if b.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
+                  {{ b.remaining | money }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="mb-5" id="members">
+  <h2 class="h4 fw-bold mb-1">Members</h2>
+  <p class="small et-muted mb-4">Everyone who can appear on splits and contributions.</p>
+
+  {% for m in members %}
+  <div class="et-member-row">
+    <div class="et-avatar">{{ member_initials(m.name) }}</div>
+    <div class="flex-grow-1 min-w-0">
+      <div class="fw-semibold text-truncate">{{ m.name }}</div>
+      <div class="small et-muted">Member ID {{ m.id }}</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="et-empty mb-4">
+    <div class="et-empty-icon"><i class="bi bi-people"></i></div>
+    <p class="et-muted mb-0">No members yet. Add the first person below.</p>
+  </div>
+  {% endfor %}
+
+  <form method="post" action="/groups/{{ group.id }}/members" class="et-form-panel mt-3">
+    <label for="member_name" class="form-label fw-semibold">Invite someone to the group</label>
+    <div class="input-group input-group-lg">
+      <span class="input-group-text bg-white border-end-0"><i class="bi bi-person et-muted"></i></span>
+      <input type="text" class="form-control border-start-0 ps-0" id="member_name" name="name" required maxlength="120" placeholder="Full name or nickname">
+      <button type="submit" class="btn btn-primary px-4"><i class="bi bi-plus-lg me-1"></i>Add</button>
+    </div>
+  </form>
+</section>
+
+<section class="mb-5" id="pool">
+  <h2 class="h4 fw-bold mb-1">Pool</h2>
+  <p class="small et-muted mb-4">Log cash or transfers whenever someone adds money for this event.</p>
+
+  {% if contributions %}
+  <div class="et-table-wrap mb-4">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th>When</th><th>Member</th><th class="text-end">Amount</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for c in contributions %}
+          <tr>
+            <td class="text-nowrap small et-muted">{{ c.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
+            <td class="fw-medium">{{ c.member_name }}</td>
+            <td class="text-end fw-bold text-money-positive">{{ c.amount | money }}</td>
+            <td class="small et-muted">{{ c.note or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="et-empty mb-4 py-4">
+    <div class="et-empty-icon"><i class="bi bi-piggy-bank"></i></div>
+    <p class="et-muted mb-0">No contributions recorded yet.</p>
+  </div>
+  {% endif %}
+
+  {% if members %}
+  <form method="post" action="/groups/{{ group.id }}/contributions#pool" class="et-form-panel">
+    <h3 class="h6 fw-bold mb-3">Add to pool</h3>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold" for="c_member">Member</label>
+        <select class="form-select" name="member_id" id="c_member" required>
+          {% for m in members %}
+          <option value="{{ m.id }}">{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold" for="c_amount">Amount</label>
+        <div class="input-group">
+          <span class="input-group-text">₹</span>
+          <input class="form-control" type="number" name="amount" id="c_amount" min="0.01" step="0.01" required placeholder="0.00">
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold" for="c_note">Note <span class="fw-normal et-muted">(optional)</span></label>
+        <input class="form-control" type="text" name="note" id="c_note" maxlength="200" placeholder="Venmo, cash…">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Add</button>
+      </div>
+    </div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="mb-5" id="expenses">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+    <div>
+      <h2 class="h4 fw-bold mb-1">Expenses</h2>
+      <p class="small et-muted mb-0">Newest first. Open a row to see how the total was split.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="/groups/{{ group.id }}/export.xlsx" class="btn btn-outline-secondary btn-lg shadow-sm">
+        <i class="bi bi-file-earmark-spreadsheet me-2"></i>Excel report
+      </a>
+      {% if members %}
+      <button type="button" class="btn btn-primary btn-lg shadow-sm" data-bs-toggle="modal" data-bs-target="#modalExpense">
+        <i class="bi bi-receipt-cutoff me-2"></i>Add expense
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if expenses %}
+  <div class="et-card p-0 overflow-hidden mb-4">
+    <div class="accordion accordion-flush" id="expenseAccordion">
+    {% for e in expenses %}
+    <div class="accordion-item border-bottom">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed py-3 px-3 px-md-4 fw-medium shadow-none bg-white" type="button"
+                data-bs-toggle="collapse" data-bs-target="#ex-{{ e.id }}" aria-expanded="false">
+          <span class="d-flex flex-wrap align-items-center gap-2 gap-md-3 w-100 me-2">
+            <span class="badge rounded-pill text-bg-light border align-self-center">{{ e.expense_date }}</span>
+            <span class="flex-grow-1 text-start">{{ e.title }}</span>
+            <span class="et-badge-cat">{{ e.category }}</span>
+            <span class="fw-bold ms-md-auto">{{ e.amount_total | money }}</span>
+          </span>
+        </button>
+      </h2>
+      <div id="ex-{{ e.id }}" class="accordion-collapse collapse">
+        <div class="accordion-body pt-0 pb-3 px-3 px-md-4 bg-light bg-opacity-50">
+          <p class="small text-uppercase fw-semibold et-muted mb-2" style="letter-spacing: 0.06em;">Split</p>
+          <ul class="list-unstyled mb-0 row row-cols-1 row-cols-sm-2 g-2">
+            {% for s in e.splits %}
+            <li class="d-flex justify-content-between align-items-center rounded-3 border bg-white py-2 px-3 shadow-sm">
+              <span class="fw-medium"><i class="bi bi-person me-2 et-muted"></i>{{ s.member.name }}</span>
+              <span class="fw-semibold">{{ s.amount | money }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="et-empty mb-4">
+    <div class="et-empty-icon"><i class="bi bi-receipt"></i></div>
+    <p class="et-muted mb-2">No expenses yet. When you add one, you will assign each person an amount or a % of the total.</p>
+    <p class="small et-muted mb-3">You can still download an Excel report with balances, pool entries, and split detail.</p>
+    <div class="d-flex flex-wrap gap-2 justify-content-center">
+      <a href="/groups/{{ group.id }}/export.xlsx" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Excel report</a>
+      {% if members %}
+      <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalExpense">
+        <i class="bi bi-plus-lg me-2"></i>Add the first expense
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+{% if members %}
+<div class="modal fade" id="modalExpense" tabindex="-1" aria-labelledby="modalExpenseLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5" id="modalExpenseLabel">New expense</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/groups/{{ group.id }}/expenses#expenses" id="expense-form">
+        <div class="modal-body">
+          <div id="expense-form-alert" class="alert alert-danger py-2 small d-none" role="alert"></div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold" for="e_title">What was it?</label>
+              <input class="form-control" id="e_title" name="title" required maxlength="200" placeholder="Groceries, gas, tickets…">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold" for="e_category">Category</label>
+              <input class="form-control" list="catOptions" id="e_category" name="category" required maxlength="100" placeholder="Pick or type">
+              <datalist id="catOptions">
+                <option value="Food"><option value="Transport"><option value="Lodging">
+                <option value="Activities"><option value="Supplies"><option value="Other">
+              </datalist>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <label class="form-label fw-semibold" for="e_total">Total</label>
+              <div class="input-group">
+                <span class="input-group-text">₹</span>
+                <input class="form-control" id="e_total" name="amount_total" type="number" min="0.01" step="0.01" required>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4">
+              <label class="form-label fw-semibold" for="e_date">Date</label>
+              <input class="form-control" id="e_date" name="expense_date" type="date" required>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <h3 class="h6 fw-bold mb-0">Who pays how much</h3>
+          </div>
+          <p class="small et-muted mb-3">Each line: pick a person, then either an <strong>exact rupee</strong> share or a <strong>percent of this expense total</strong>. All lines together must equal the total above. Use <strong>Split equally</strong> to fill one line per member with the total divided evenly (extra paise go to the first members so it adds up exactly). When you <strong>add or remove a line</strong>, shares are <strong>re-split evenly</strong> across the lines that remain (when the total above is a valid amount).</p>
+          <div id="split-rows" class="mb-2"></div>
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" id="btn-split-equal" title="Divide the total evenly across everyone in this group">
+              <i class="bi bi-grid-3x2-gap me-1"></i>Split equally
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" id="btn-add-split">
+              <i class="bi bi-plus-lg me-1"></i>Add line
+            </button>
+          </div>
+          <input type="hidden" name="splits_json" id="splits_json" value="[]">
+        </div>
+        <div class="modal-footer flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check2-circle me-2"></i>Save expense</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<a href="/groups" class="et-link-back"><i class="bi bi-arrow-left"></i>All groups</a>
+{% endblock %}
+
+{% block scripts %}
+{% if members %}
+<script>
+  const MEMBERS = {{ members_opts | tojson }};
+
+  const splitContainer = document.getElementById('split-rows');
+  const btnAdd = document.getElementById('btn-add-split');
+  const btnEqual = document.getElementById('btn-split-equal');
+  const form = document.getElementById('expense-form');
+  const alertEl = document.getElementById('expense-form-alert');
+
+  function showExpenseAlert(msg) {
+    alertEl.textContent = msg;
+    alertEl.classList.remove('d-none');
+  }
+
+  function splitRowHtml(preset) {
+    preset = preset || {};
+    const mid = preset.memberId;
+    const mode = preset.mode || 'amount';
+    const value = preset.value;
+    const opts = MEMBERS.map(m =>
+      `<option value="${m.id}"${m.id == mid ? ' selected' : ''}>${String(m.name).replace(/</g, '&lt;')}</option>`
+    ).join('');
+    const amtSel = mode === 'amount' ? ' selected' : '';
+    const pctSel = mode === 'percent' ? ' selected' : '';
+    const valAttr = (value != null && value !== '') ? ` value="${value}"` : '';
+    return `
+      <div class="split-row" data-split-row>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label small fw-semibold mb-1">Member</label>
+            <select class="form-select split-member" required>${opts}</select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold mb-1">Type</label>
+            <select class="form-select split-mode">
+              <option value="amount"${amtSel}>Exact ₹</option>
+              <option value="percent"${pctSel}>% of total</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small fw-semibold mb-1">Value</label>
+            <input type="number" class="form-control split-value" min="0" step="0.01" placeholder="0"${valAttr}>
+          </div>
+          <div class="col-md-1">
+            <label class="form-label small d-none d-md-block mb-1">&nbsp;</label>
+            <button type="button" class="btn btn-outline-danger w-100 split-remove" title="Remove line"><i class="bi bi-trash3"></i></button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function clearSplitRows() {
+    splitContainer.querySelectorAll('[data-split-row]').forEach((el) => el.remove());
+  }
+
+  function appendSplitRow(preset) {
+    splitContainer.insertAdjacentHTML('beforeend', splitRowHtml(preset));
+    wireRow(splitContainer.lastElementChild);
+  }
+
+  /** Redistribute expense total evenly across current split rows (amount mode). No-op if total invalid or no rows. */
+  function equalSplitAmongCurrentRows() {
+    const rows = splitContainer.querySelectorAll('[data-split-row]');
+    const n = rows.length;
+    if (!n) return;
+    const totalRaw = document.getElementById('e_total').value;
+    const total = parseFloat(totalRaw);
+    if (!(total > 0) || Number.isNaN(total)) return;
+    const cents = Math.round(total * 100);
+    const base = Math.floor(cents / n);
+    const rem = cents % n;
+    rows.forEach((row, i) => {
+      const shareCents = base + (i < rem ? 1 : 0);
+      const rupees = (shareCents / 100).toFixed(2);
+      row.querySelector('.split-mode').value = 'amount';
+      row.querySelector('.split-value').value = rupees;
+    });
+  }
+
+  function applyEqualSplit() {
+    alertEl.classList.add('d-none');
+    alertEl.textContent = '';
+    const totalRaw = document.getElementById('e_total').value;
+    const total = parseFloat(totalRaw);
+    if (!MEMBERS.length) {
+      showExpenseAlert('Add members to the group before splitting an expense.');
+      return;
+    }
+    if (!(total > 0) || Number.isNaN(total)) {
+      showExpenseAlert('Enter a valid expense total first, then split equally.');
+      return;
+    }
+    const cents = Math.round(total * 100);
+    const n = MEMBERS.length;
+    const base = Math.floor(cents / n);
+    const rem = cents % n;
+    clearSplitRows();
+    MEMBERS.forEach((m, i) => {
+      const shareCents = base + (i < rem ? 1 : 0);
+      const rupees = (shareCents / 100).toFixed(2);
+      appendSplitRow({ memberId: m.id, mode: 'amount', value: rupees });
+    });
+  }
+
+  btnAdd.addEventListener('click', () => {
+    appendSplitRow();
+    equalSplitAmongCurrentRows();
+  });
+  btnEqual.addEventListener('click', applyEqualSplit);
+
+  function wireRow(row) {
+    row.querySelector('.split-remove').addEventListener('click', () => {
+      row.remove();
+      equalSplitAmongCurrentRows();
+    });
+  }
+
+  if (MEMBERS.length) {
+    appendSplitRow();
+  }
+
+  form.addEventListener('submit', (ev) => {
+    alertEl.classList.add('d-none');
+    alertEl.textContent = '';
+    const rows = splitContainer.querySelectorAll('[data-split-row]');
+    const out = [];
+    rows.forEach(row => {
+      const member_id = parseInt(row.querySelector('.split-member').value, 10);
+      const mode = row.querySelector('.split-mode').value;
+      const raw = row.querySelector('.split-value').value;
+      const val = raw === '' ? null : parseFloat(raw);
+      if (val == null || isNaN(val) || val <= 0) return;
+      if (mode === 'amount') out.push({ member_id, amount: val });
+      else out.push({ member_id, percent: val });
+    });
+    document.getElementById('splits_json').value = JSON.stringify(out);
+    if (!out.length) {
+      ev.preventDefault();
+      showExpenseAlert('Add at least one split line with a positive value, or use Split equally.');
+    }
+  });
+
+  const d = document.getElementById('e_date');
+  if (d && !d.value) d.valueAsDate = new Date();
+
+  document.getElementById('modalExpense')?.addEventListener('hidden.bs.modal', () => {
+    alertEl?.classList.add('d-none');
+  });
+</script>
+{% endif %}
+{% endblock %}

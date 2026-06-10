@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<nav class="et-breadcrumb mb-2" aria-label="breadcrumb">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="/orgs">Organizations</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Notifications</li>
+  </ol>
+</nav>
+
+<header class="mb-4 d-flex flex-wrap justify-content-between align-items-start gap-3">
+  <div>
+    <h1 class="et-hero-title mb-2">Notifications</h1>
+    <p class="et-hero-lead mb-0">Activity across all your groups and events. Unread items are highlighted.</p>
+  </div>
+  {% if activities %}
+  <form method="post" action="/notifications/read-all">
+    <button type="submit" class="btn btn-outline-primary">Mark all read</button>
+  </form>
+  {% endif %}
+</header>
+
+{% if not grouped %}
+<div class="et-empty">
+  <div class="et-empty-icon"><i class="bi bi-bell"></i></div>
+  <p class="et-muted mb-0">No activity yet. Create organizations, events, and expenses to see updates here.</p>
+</div>
+{% else %}
+  {% for org in grouped %}
+  <section class="mb-5 et-card">
+    <div class="et-card-body">
+      <h2 class="h5 fw-bold mb-3">
+        <i class="bi bi-building me-2 text-primary"></i>
+        <a href="/orgs/{{ org.organization_id }}" class="text-reset text-decoration-none">{{ org.organization_name }}</a>
+      </h2>
+      {% for eg in org.event_groups %}
+      <div class="ms-md-3 mb-4 {% if not loop.last %}border-bottom pb-4{% endif %}">
+        <h3 class="h6 fw-semibold et-muted mb-2">
+          {% if eg.event_id %}
+          <i class="bi bi-calendar-event me-1"></i>
+          <a href="/events/{{ eg.event_id }}" class="text-reset">{{ eg.event_name }}</a>
+          {% else %}
+          <i class="bi bi-collection me-1"></i>{{ eg.event_name }}
+          {% endif %}
+        </h3>
+        <ul class="list-group list-group-flush">
+          {% for a in eg.activities %}
+          <li class="list-group-item d-flex flex-wrap justify-content-between align-items-start gap-2 {% if not a.read_at %}list-group-item-primary bg-opacity-10{% endif %}">
+            <div class="flex-grow-1 min-w-0">
+              <p class="mb-0">{{ a.summary }}</p>
+              <p class="small et-muted mb-0">{{ a.created_at.strftime('%b %d, %Y · %H:%M') }} · <span class="text-uppercase" style="font-size: 0.7rem;">{{ a.kind | replace('_', ' ') }}</span></p>
+            </div>
+            {% if not a.read_at %}
+            <form method="post" action="/notifications/{{ a.id }}/read" class="flex-shrink-0">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Mark read</button>
+            </form>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+{% endif %}
+
+<a href="/orgs" class="et-link-back"><i class="bi bi-arrow-left"></i>Organizations</a>
+{% endblock %}

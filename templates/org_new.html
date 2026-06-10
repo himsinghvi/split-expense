@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}New organization{% endblock %}
+
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7 col-xl-6">
+    <nav class="et-breadcrumb mb-3" aria-label="breadcrumb">
+      <ol class="breadcrumb small mb-0">
+        <li class="breadcrumb-item"><a href="/orgs">Organizations</a></li>
+        <li class="breadcrumb-item active" aria-current="page">New</li>
+      </ol>
+    </nav>
+
+    <div class="et-hero mb-4">
+      <p class="et-eyebrow mb-2">Step 1</p>
+      <h1 class="et-hero-title">Name your organization</h1>
+      <p class="et-hero-lead">This is the larger group (team, family, apartment). You will add separate events inside it for each trip or bill cycle.</p>
+    </div>
+
+    <form method="post" action="/orgs/new" class="et-form-panel">
+      <label for="name" class="form-label fw-semibold">Organization name</label>
+      <input type="text" class="form-control form-control-lg mb-1" id="name" name="name" required
+             placeholder="e.g. Roommates 2026, Family Patel" maxlength="200" autofocus>
+      <div class="form-text mb-4">You can invite others by mobile after it is created.</div>
+      <div class="d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary btn-lg px-4">
+          <i class="bi bi-arrow-right-circle me-2"></i>Continue
+        </button>
+        <a href="/orgs" class="btn btn-outline-secondary btn-lg">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

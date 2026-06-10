@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ org.name }}{% endblock %}
+
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<nav class="et-breadcrumb mb-2" aria-label="breadcrumb">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="/orgs">Organizations</a></li>
+    <li class="breadcrumb-item active text-truncate" style="max-width: 14rem;" aria-current="page">{{ org.name }}</li>
+  </ol>
+</nav>
+
+<header class="mb-4">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
+    <div>
+      <h1 class="et-hero-title mb-2">{{ org.name }}</h1>
+      <p class="et-hero-lead mb-0">Invite members by mobile, then create events to track shared money for each occasion.</p>
+    </div>
+    {% if org.created_by_user_id == current_user_id %}
+    <div class="d-flex flex-wrap gap-2 align-items-start">
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#editOrgPanel" aria-expanded="false"><i class="bi bi-pencil me-1"></i>Edit name</button>
+      <form method="post" action="/orgs/{{ org.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this organization and all its events, members, and data? This cannot be undone.');">
+        <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3 me-1"></i>Delete org</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  {% if org.created_by_user_id == current_user_id %}
+  <div class="collapse mt-2" id="editOrgPanel">
+    <form method="post" action="/orgs/{{ org.id }}/edit" class="et-form-panel py-3" style="max-width: 28rem;">
+      <label class="form-label small fw-semibold" for="org_name_edit">Organization name</label>
+      <div class="input-group">
+        <input type="text" class="form-control" id="org_name_edit" name="name" value="{{ org.name }}" required maxlength="200">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+</header>
+
+{% if org_activities %}
+<section class="mb-5 et-card" id="activity">
+  <div class="et-card-body">
+    <h2 class="h4 fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>Recent activity</h2>
+    <p class="small et-muted mb-3">Updates for you in this organization.</p>
+    <ul class="list-group list-group-flush">
+      {% for a in org_activities %}
+      <li class="list-group-item d-flex justify-content-between align-items-start gap-2 {% if not a.read_at %}list-group-item-light{% endif %}">
+        <div>
+          <span class="small text-uppercase et-muted d-block mb-1" style="font-size: 0.7rem;">{{ a.kind | replace('_', ' ') }}</span>
+          <span>{{ a.summary }}</span>
+          <span class="small et-muted d-block">{{ a.created_at.strftime('%b %d, %Y · %H:%M') }}</span>
+        </div>
+        {% if a.event_id %}
+        <a href="/events/{{ a.event_id }}" class="btn btn-sm btn-outline-primary flex-shrink-0">Event</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="small et-muted mt-3 mb-0"><a href="/notifications">View all notifications →</a></p>
+  </div>
+</section>
+{% endif %}
+
+<section class="mb-5" id="members">
+  <h2 class="h4 fw-bold mb-1">Organization members</h2>
+  <p class="small et-muted mb-4">Everyone here can see and manage all events under this organization.</p>
+
+  <ul class="list-group mb-4" style="max-width: 36rem;">
+    {% for om in org.members %}
+    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <span class="fw-semibold">{{ om.user.full_name }}</span>
+        <span class="small et-muted d-block">{{ om.user.mobile }}</span>
+      </div>
+      {% if membership_remove_ok.get(om.id) %}
+      <form method="post" action="/orgs/{{ org.id }}/memberships/{{ om.id }}/remove#members" class="d-inline" onsubmit="return confirm('Remove this person from the organization?');">
+        <button type="submit" class="btn btn-outline-danger btn-sm">{% if om.user_id == current_user_id %}Leave{% else %}Remove{% endif %}</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+
+  <form method="post" action="/orgs/{{ org.id }}/members#members" class="et-form-panel" style="max-width: 36rem;">
+    <h3 class="h6 fw-bold mb-3">Invite by mobile</h3>
+    <p class="small et-muted mb-3">They must already have an account. Use digits only or with country code.</p>
+    <div class="input-group input-group-lg">
+      <span class="input-group-text"><i class="bi bi-phone"></i></span>
+      <input type="tel" class="form-control" name="mobile" required maxlength="20" placeholder="Mobile number">
+      <button type="submit" class="btn btn-primary">Add to org</button>
+    </div>
+  </form>
+</section>
+
+<section class="mb-5" id="events">
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h2 class="h4 fw-bold mb-1">Events</h2>
+      <p class="small et-muted mb-0">Each event has its own pool, members for splits, and expense log.</p>
+    </div>
+  </div>
+
+  {% if events %}
+  <div class="list-group mb-4">
+    {% for ev in events %}
+    <div class="list-group-item d-flex flex-wrap align-items-center justify-content-between gap-2 py-3">
+      <a href="/events/{{ ev.id }}" class="fw-semibold text-decoration-none text-reset flex-grow-1">{{ ev.name }}</a>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        {% if ev.created_by_user_id == current_user_id %}
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#editEv{{ ev.id }}"><i class="bi bi-pencil"></i></button>
+        <form method="post" action="/events/{{ ev.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this event and all pool entries, members, and expenses?');">
+          <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3"></i></button>
+        </form>
+        {% endif %}
+        <a href="/events/{{ ev.id }}" class="btn btn-sm btn-outline-primary">Open</a>
+      </div>
+      {% if ev.created_by_user_id == current_user_id %}
+      <div class="collapse w-100" id="editEv{{ ev.id }}">
+        <form method="post" action="/events/{{ ev.id }}/edit" class="d-flex flex-wrap gap-2 mt-2 pt-2 border-top">
+          <input type="text" class="form-control form-control-sm" name="name" value="{{ ev.name }}" required maxlength="200" style="max-width: 16rem;">
+          <button type="submit" class="btn btn-sm btn-primary">Save name</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="et-empty mb-4">
+    <p class="et-muted mb-3">No events yet. Create the first one for a trip, party, or billing period.</p>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/orgs/{{ org.id }}/events/new" class="et-form-panel" style="max-width: 32rem;">
+    <label class="form-label fw-semibold" for="ev_name">New event name</label>
+    <div class="input-group input-group-lg">
+      <input type="text" class="form-control" id="ev_name" name="name" required maxlength="200" placeholder="e.g. Ski trip March, June utilities">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Create event</button>
+    </div>
+  </form>
+</section>
+
+<a href="/orgs" class="et-link-back"><i class="bi bi-arrow-left"></i>All organizations</a>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+{% block page_heading %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-5 col-xl-4">
+    <div class="et-hero mb-4">
+      <h1 class="et-hero-title">Create account</h1>
+      <p class="et-hero-lead mb-0">Sign up with your mobile number and a password. Others can invite you to organizations by this number.</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/register" class="et-form-panel">
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="full_name">Your name</label>
+        <input type="text" class="form-control form-control-lg" id="full_name" name="full_name" required maxlength="120"
+               value="{{ full_name or '' }}" autocomplete="name" placeholder="How others see you">
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="mobile">Mobile</label>
+        <input type="tel" class="form-control form-control-lg" id="mobile" name="mobile" required maxlength="20"
+               value="{{ mobile or '' }}" autocomplete="tel" placeholder="10–15 digits">
+      </div>
+      <div class="mb-4">
+        <label class="form-label fw-semibold" for="password">Password</label>
+        <input type="password" class="form-control form-control-lg" id="password" name="password" required minlength="6" autocomplete="new-password">
+        <div class="form-text">At least 6 characters.</div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg w-100">Create account</button>
+      <p class="small text-center et-muted mt-3 mb-0">Already have an account? <a href="/auth/login">Sign in</a></p>
+    </form>
+  </div>
+</div>
+{% endblock %}
