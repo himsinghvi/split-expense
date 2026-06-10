@@ -1,4 +1,31 @@
-# Vercel discovers FastAPI via requirements.txt; this pins the ASGI entry when the app
-# lives in the Python package `app/` (avoids picking the wrong main.py).
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "expense-tracker"
+version = "2.0.0"
+description = "Organizations, events, shared expenses (FastAPI)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.136.3",
+    "uvicorn[standard]==0.32.1",
+    "sqlalchemy==2.0.36",
+    "jinja2==3.1.4",
+    "python-multipart>=0.0.18",
+    "pydantic>=2.9.0,<3",
+    "pydantic-settings==2.6.1",
+    "openpyxl==3.1.5",
+    "passlib[bcrypt]==1.7.4",
+    "bcrypt==4.2.1",
+    "python-jose[cryptography]==3.3.0",
+    "itsdangerous==2.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app"]
+
 [tool.vercel]
 entrypoint = "app.main:app"
