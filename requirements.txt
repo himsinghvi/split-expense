@@ -1,3 +1,4 @@
+# Keep dependency pins in sync with `pyproject.toml` → [project.dependencies] (Vercel uses uv + pyproject).
 # FastAPI 0.115.x is incompatible with Starlette 1.x (Router no longer accepts on_startup).
 # Use FastAPI 0.135+ which targets Starlette 0.46+ / 1.x.
 fastapi==0.136.3

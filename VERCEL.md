@@ -25,6 +25,6 @@ Vercel serves files under **`public/`** from the CDN. This app still mounts **`/
 
 ## Entrypoint
 
-`pyproject.toml` contains `[tool.vercel] entrypoint = "app.main:app"` so Vercel loads the FastAPI instance from `app/main.py` reliably.
+`pyproject.toml` defines **`[project]`** (required by Vercel’s **`uv lock`** install) and **`[tool.vercel] entrypoint`**. Dependency pins are mirrored in **`requirements.txt`** for local `pip install -r`; keep them aligned when you upgrade packages.
 
 After changing env vars, redeploy.
