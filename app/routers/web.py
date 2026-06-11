@@ -299,6 +299,9 @@ def post_delete_org_contribution(
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return _redirect_org_pool(org_id, fragment="pool")
+
+
+@router.get("/events/{event_id}", response_class=HTMLResponse)
 def page_event_detail(
     request: Request, event_id: int, db: Session = Depends(get_db)
 ):
