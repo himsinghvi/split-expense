@@ -27,7 +27,7 @@ Set **`SECRET_KEY`** (and optionally `SESSION_SECRET`, `JWT_SECRET`) in the envi
 
 ## Deploy on Vercel
 
-See **[VERCEL.md](VERCEL.md)**. Serverless filesystems are read-only except `/tmp`, so the app switches the default SQLite location on Vercel and documents required env vars and persistent databases.
+See **[VERCEL.md](VERCEL.md)**. On Vercel you must set **`DATABASE_URL`** to Postgres (e.g. Neon); SQLite is not durable on serverless and would make data disappear after cold starts.
 
 ## Web flow
 
