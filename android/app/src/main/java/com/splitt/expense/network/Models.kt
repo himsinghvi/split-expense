@@ -37,12 +37,17 @@ data class UserMe(
 data class OrganizationRead(
     val id: Long,
     val name: String,
+    @SerializedName("created_by_user_id") val createdByUserId: Long? = null,
+    @SerializedName("pool_available") val poolAvailable: Double? = null,
+    @SerializedName("pool_total_contributed") val poolTotalContributed: Double? = null,
+    @SerializedName("pool_total_expenses") val poolTotalExpenses: Double? = null,
 )
 
 data class EventRead(
     val id: Long,
     @SerializedName("organization_id") val organizationId: Long,
     val name: String,
+    @SerializedName("organization_pool_available") val organizationPoolAvailable: Double? = null,
 )
 
 data class MemberRead(
@@ -64,15 +69,16 @@ data class OrgMemberSuggestion(
     val mobile: String,
 )
 
-data class ContributionCreateRequest(
-    @SerializedName("member_id") val memberId: Long,
+data class OrgPoolContributionCreateRequest(
+    @SerializedName("user_id") val userId: Long,
     val amount: BigDecimal,
     val note: String? = null,
 )
 
-data class ContributionRead(
+data class OrgPoolContributionRead(
     val id: Long,
-    @SerializedName("member_id") val memberId: Long,
+    @SerializedName("organization_id") val organizationId: Long,
+    @SerializedName("user_id") val userId: Long,
     val amount: BigDecimal,
     val note: String?,
     @SerializedName("created_at") val createdAt: String,
@@ -110,6 +116,7 @@ data class ExpenseRead(
 
 data class MemberBalanceRead(
     @SerializedName("member_id") val memberId: Long,
+    @SerializedName("user_id") val userId: Long? = null,
     val name: String,
     val contributed: BigDecimal,
     val expended: BigDecimal,

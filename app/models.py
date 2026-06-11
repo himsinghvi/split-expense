@@ -56,6 +56,31 @@ class Organization(Base):
     events: Mapped[list["Event"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
+    org_contributions: Mapped[list["OrganizationContribution"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+
+
+class OrganizationContribution(Base):
+    """Money pooled at the organization level (shared across all events)."""
+
+    __tablename__ = "organization_contributions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    organization: Mapped["Organization"] = relationship(back_populates="org_contributions")
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
 
 
 class OrganizationMember(Base):
@@ -123,27 +148,9 @@ class Member(Base):
     user: Mapped["User | None"] = relationship(
         back_populates="event_memberships", foreign_keys=[user_id]
     )
-    contributions: Mapped[list["Contribution"]] = relationship(
-        back_populates="member", cascade="all, delete-orphan"
-    )
     expense_splits: Mapped[list["ExpenseSplit"]] = relationship(
         back_populates="member", cascade="all, delete-orphan"
     )
-
-
-class Contribution(Base):
-    __tablename__ = "contributions"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    member_id: Mapped[int] = mapped_column(ForeignKey("members.id"), nullable=False)
-    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True, index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    member: Mapped["Member"] = relationship(back_populates="contributions")
 
 
 class Expense(Base):

@@ -11,12 +11,12 @@ from app.db_migrate import run_sqlite_migrations
 from app.middleware_unread import UnreadNotificationsMiddleware
 from app.models import (  # noqa: F401
     Activity,
-    Contribution,
     Event,
     Expense,
     ExpenseSplit,
     Member,
     Organization,
+    OrganizationContribution,
     OrganizationMember,
     User,
 )

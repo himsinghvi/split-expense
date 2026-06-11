@@ -15,12 +15,12 @@ from app.activity_service import (
 from app.auth_utils import normalize_mobile, verify_password
 from app.models import (
     Activity,
-    Contribution,
     Event,
     Expense,
     ExpenseSplit,
     Member,
     Organization,
+    OrganizationContribution,
     OrganizationMember,
     User,
 )
@@ -173,6 +173,9 @@ def get_organization(db: Session, org_id: int) -> Organization | None:
         .options(
             joinedload(Organization.members).joinedload(OrganizationMember.user),
             joinedload(Organization.events),
+            joinedload(Organization.org_contributions).joinedload(
+                OrganizationContribution.user
+            ),
         )
     ).unique().scalar_one_or_none()
 
@@ -268,7 +271,6 @@ def get_event(db: Session, event_id: int) -> Event | None:
         .options(
             joinedload(Event.organization),
             joinedload(Event.members).joinedload(Member.user),
-            joinedload(Event.members).joinedload(Member.contributions),
             joinedload(Event.expenses)
             .joinedload(Expense.splits)
             .joinedload(ExpenseSplit.member),
@@ -283,7 +285,6 @@ def get_event_for_report(db: Session, event_id: int) -> Event | None:
         .options(
             joinedload(Event.organization),
             joinedload(Event.members).joinedload(Member.user),
-            joinedload(Event.members).joinedload(Member.contributions),
             joinedload(Event.expenses)
             .joinedload(Expense.splits)
             .joinedload(ExpenseSplit.member),
@@ -423,45 +424,75 @@ def add_member(
     return mem
 
 
-def add_contribution(
+def org_total_expenses(db: Session, organization_id: int) -> Decimal:
+    v = db.scalar(
+        select(func.coalesce(func.sum(Expense.amount_total), 0))
+        .join(Event, Expense.event_id == Event.id)
+        .where(Event.organization_id == organization_id)
+    )
+    return Decimal(str(v or 0)).quantize(Decimal("0.01"))
+
+
+def org_total_contributed(db: Session, organization_id: int) -> Decimal:
+    v = db.scalar(
+        select(func.coalesce(func.sum(OrganizationContribution.amount), 0)).where(
+            OrganizationContribution.organization_id == organization_id
+        )
+    )
+    return Decimal(str(v or 0)).quantize(Decimal("0.01"))
+
+
+def org_pool_available(db: Session, organization_id: int) -> Decimal:
+    return (
+        org_total_contributed(db, organization_id)
+        - org_total_expenses(db, organization_id)
+    ).quantize(Decimal("0.01"))
+
+
+def add_org_contribution(
     db: Session,
-    member_id: int,
+    organization_id: int,
+    user_id: int,
     amount: Decimal,
     note: str | None,
     *,
     actor_user_id: int | None = None,
-) -> Contribution:
-    mem = db.get(Member, member_id)
-    if not mem:
-        raise ValueError("Member not found.")
-    c = Contribution(
-        member_id=member_id,
+) -> OrganizationContribution:
+    if actor_user_id is None:
+        raise ValueError("Actor required.")
+    if not user_in_organization(db, actor_user_id, organization_id):
+        raise PermissionError("You cannot add pool money to this organization.")
+    if not user_in_organization(db, user_id, organization_id):
+        raise ValueError("That person is not a member of this organization.")
+    if amount <= 0:
+        raise ValueError("Amount must be positive.")
+    row = OrganizationContribution(
+        organization_id=organization_id,
+        user_id=user_id,
         amount=amount,
-        note=note,
+        note=(note or "").strip() or None,
         created_by_user_id=actor_user_id,
     )
-    db.add(c)
+    db.add(row)
     db.flush()
-    ev = db.get(Event, mem.event_id)
-    if ev:
-        uids = list(dict.fromkeys(event_linked_user_ids(db, mem.event_id)))
-        if not uids and actor_user_id:
-            uids = [actor_user_id]
-        amt = f"{amount:.2f}"
-        mname = mem.name
-        aname = user_display_name(db, actor_user_id) if actor_user_id else "Someone"
-        emit_activity(
-            db,
-            recipient_user_ids=uids,
-            organization_id=ev.organization_id,
-            event_id=ev.id,
-            actor_user_id=actor_user_id,
-            kind="contribution_added",
-            summary=f'{aname} logged ₹{amt} to the pool for {mname} in "{ev.name}"',
-        )
+    org = db.get(Organization, organization_id)
+    u = db.get(User, user_id)
+    uname = ((u.full_name or "").strip() or u.mobile) if u else str(user_id)
+    aname = user_display_name(db, actor_user_id) if actor_user_id else "Someone"
+    amt = f"{amount:.2f}"
+    uids = org_member_user_ids(db, organization_id)
+    emit_activity(
+        db,
+        recipient_user_ids=uids,
+        organization_id=organization_id,
+        event_id=None,
+        actor_user_id=actor_user_id,
+        kind="contribution_added",
+        summary=f'{aname} added ₹{amt} to the org pool for {uname}',
+    )
     db.commit()
-    db.refresh(c)
-    return c
+    db.refresh(row)
+    return row
 
 
 def _split_amounts(
@@ -590,14 +621,13 @@ def _can_manage_expense(exp: Expense, acting_user_id: int, db: Session) -> bool:
     return ev is not None and ev.created_by_user_id == acting_user_id
 
 
-def _can_manage_contribution(c: Contribution, acting_user_id: int, db: Session) -> bool:
+def _can_manage_org_contribution(
+    c: OrganizationContribution, acting_user_id: int, db: Session
+) -> bool:
     if c.created_by_user_id is not None:
         return c.created_by_user_id == acting_user_id
-    mem = db.get(Member, c.member_id)
-    if not mem:
-        return False
-    ev = db.get(Event, mem.event_id)
-    return ev is not None and ev.created_by_user_id == acting_user_id
+    org = db.get(Organization, c.organization_id)
+    return org is not None and org.created_by_user_id == acting_user_id
 
 
 def _can_manage_member(mem: Member, acting_user_id: int, db: Session) -> bool:
@@ -755,14 +785,6 @@ def delete_member(db: Session, member_id: int, acting_user_id: int) -> None:
         raise PermissionError("You cannot edit this event.")
     if not _can_manage_member(mem, acting_user_id, db):
         raise PermissionError("Only the person who added this member can remove them.")
-    n_contrib = int(
-        db.scalar(
-            select(func.count())
-            .select_from(Contribution)
-            .where(Contribution.member_id == member_id)
-        )
-        or 0
-    )
     n_splits = int(
         db.scalar(
             select(func.count())
@@ -771,31 +793,30 @@ def delete_member(db: Session, member_id: int, acting_user_id: int) -> None:
         )
         or 0
     )
-    if n_contrib or n_splits:
+    if n_splits:
         raise ValueError(
-            "This member has pool contributions or expense splits. "
+            "This member has expense splits in this event. "
             "Remove or reassign those before deleting the member."
         )
     db.delete(mem)
     db.commit()
 
 
-def update_contribution(
+def update_org_contribution(
     db: Session,
     contribution_id: int,
     acting_user_id: int,
     *,
     amount: Decimal,
     note: str | None,
-) -> Contribution:
-    c = db.get(Contribution, contribution_id)
+) -> OrganizationContribution:
+    c = db.get(OrganizationContribution, contribution_id)
     if not c:
-        raise ValueError("Contribution not found.")
-    mem = db.get(Member, c.member_id)
-    if not mem or not user_can_access_event(db, acting_user_id, mem.event_id):
+        raise ValueError("Pool entry not found.")
+    if not user_in_organization(db, acting_user_id, c.organization_id):
         raise PermissionError("Not allowed.")
-    if not _can_manage_contribution(c, acting_user_id, db):
-        raise PermissionError("Only the person who logged this contribution can edit it.")
+    if not _can_manage_org_contribution(c, acting_user_id, db):
+        raise PermissionError("Only the person who logged this pool entry can edit it.")
     if amount <= 0:
         raise ValueError("Amount must be positive.")
     c.amount = amount
@@ -805,15 +826,14 @@ def update_contribution(
     return c
 
 
-def delete_contribution(db: Session, contribution_id: int, acting_user_id: int) -> None:
-    c = db.get(Contribution, contribution_id)
+def delete_org_contribution(db: Session, contribution_id: int, acting_user_id: int) -> None:
+    c = db.get(OrganizationContribution, contribution_id)
     if not c:
-        raise ValueError("Contribution not found.")
-    mem = db.get(Member, c.member_id)
-    if not mem or not user_can_access_event(db, acting_user_id, mem.event_id):
+        raise ValueError("Pool entry not found.")
+    if not user_in_organization(db, acting_user_id, c.organization_id):
         raise PermissionError("Not allowed.")
-    if not _can_manage_contribution(c, acting_user_id, db):
-        raise PermissionError("Only the person who logged this contribution can delete it.")
+    if not _can_manage_org_contribution(c, acting_user_id, db):
+        raise PermissionError("Only the person who logged this pool entry can delete it.")
     db.delete(c)
     db.commit()
 
@@ -875,16 +895,13 @@ def user_can_manage_expense(
     return _can_manage_expense(exp, acting_user_id, db)
 
 
-def user_can_manage_contribution(
+def user_can_manage_org_contribution(
     db: Session, contribution_id: int, acting_user_id: int
 ) -> bool:
-    c = db.get(Contribution, contribution_id)
-    if not c:
+    c = db.get(OrganizationContribution, contribution_id)
+    if not c or not user_in_organization(db, acting_user_id, c.organization_id):
         return False
-    mem = db.get(Member, c.member_id)
-    if not mem or not user_can_access_event(db, acting_user_id, mem.event_id):
-        return False
-    return _can_manage_contribution(c, acting_user_id, db)
+    return _can_manage_org_contribution(c, acting_user_id, db)
 
 
 def user_can_manage_member(
@@ -915,39 +932,95 @@ def user_can_remove_org_membership(
 
 
 def user_personal_balance_summary(db: Session, user_id: int) -> dict[str, Decimal]:
-    """Across all events, totals for every event Member row linked to this user."""
+    """Org-wide pool entries for this user vs expense splits on any event member row."""
+    z = Decimal("0").quantize(Decimal("0.01"))
+    contrib_sum = db.scalar(
+        select(func.coalesce(func.sum(OrganizationContribution.amount), 0)).where(
+            OrganizationContribution.user_id == user_id
+        )
+    )
     member_ids = list(
         db.scalars(select(Member.id).where(Member.user_id == user_id)).all()
     )
-    z = Decimal("0").quantize(Decimal("0.01"))
-    if not member_ids:
-        return {
-            "total_contributed": z,
-            "total_expended": z,
-            "total_remaining": z,
-        }
-
-    contrib_sum = db.scalar(
-        select(func.coalesce(func.sum(Contribution.amount), 0)).where(
-            Contribution.member_id.in_(member_ids)
+    split_sum = z
+    if member_ids:
+        v = db.scalar(
+            select(func.coalesce(func.sum(ExpenseSplit.amount), 0)).where(
+                ExpenseSplit.member_id.in_(member_ids)
+            )
         )
-    )
-    split_sum = db.scalar(
-        select(func.coalesce(func.sum(ExpenseSplit.amount), 0)).where(
-            ExpenseSplit.member_id.in_(member_ids)
-        )
-    )
+        split_sum = Decimal(str(v or 0)).quantize(Decimal("0.01"))
     contributed = Decimal(str(contrib_sum or 0)).quantize(Decimal("0.01"))
-    expended = Decimal(str(split_sum or 0)).quantize(Decimal("0.01"))
-    remaining = (contributed - expended).quantize(Decimal("0.01"))
+    remaining = (contributed - split_sum).quantize(Decimal("0.01"))
     return {
         "total_contributed": contributed,
-        "total_expended": expended,
+        "total_expended": split_sum,
         "total_remaining": remaining,
     }
 
 
+def org_member_balances(db: Session, organization_id: int) -> list[MemberBalance]:
+    """Per org roster user: pooled (org contributions) vs expended (all events in org)."""
+    oms = list(
+        db.scalars(
+            select(OrganizationMember)
+            .where(OrganizationMember.organization_id == organization_id)
+            .options(joinedload(OrganizationMember.user))
+            .order_by(OrganizationMember.id)
+        ).unique().all()
+    )
+    if not oms:
+        return []
+    uids = [om.user_id for om in oms]
+
+    contrib_by = {uid: Decimal("0") for uid in uids}
+    for uid, amt in db.execute(
+        select(OrganizationContribution.user_id, OrganizationContribution.amount).where(
+            OrganizationContribution.organization_id == organization_id,
+            OrganizationContribution.user_id.in_(uids),
+        )
+    ).all():
+        contrib_by[int(uid)] += Decimal(str(amt))
+
+    exp_rows = db.execute(
+        select(Member.user_id, func.sum(ExpenseSplit.amount))
+        .join(ExpenseSplit, ExpenseSplit.member_id == Member.id)
+        .join(Expense, Expense.id == ExpenseSplit.expense_id)
+        .join(Event, Event.id == Expense.event_id)
+        .where(
+            Event.organization_id == organization_id,
+            Member.user_id.isnot(None),
+            Member.user_id.in_(uids),
+        )
+        .group_by(Member.user_id)
+    ).all()
+    exp_by = {uid: Decimal("0") for uid in uids}
+    for uid, s in exp_rows:
+        if uid is not None:
+            exp_by[int(uid)] += Decimal(str(s or 0))
+
+    out: list[MemberBalance] = []
+    for om in oms:
+        u = om.user
+        uid = om.user_id
+        c = contrib_by.get(uid, Decimal("0")).quantize(Decimal("0.01"))
+        e = exp_by.get(uid, Decimal("0")).quantize(Decimal("0.01"))
+        label = ((u.full_name or "").strip() or u.mobile) if u else str(uid)
+        out.append(
+            MemberBalance(
+                member_id=om.id,
+                user_id=uid,
+                name=label,
+                contributed=c,
+                expended=e,
+                remaining=(c - e).quantize(Decimal("0.01")),
+            )
+        )
+    return out
+
+
 def member_balances(db: Session, event_id: int) -> list[MemberBalance]:
+    """Per event member: share of this event's expenses only (pool lives at org level)."""
     members = list(
         db.scalars(
             select(Member).where(Member.event_id == event_id).order_by(Member.id)
@@ -957,15 +1030,7 @@ def member_balances(db: Session, event_id: int) -> list[MemberBalance]:
         return []
 
     mids = [m.id for m in members]
-
-    contrib_rows = db.execute(
-        select(Contribution.member_id, Contribution.amount).where(
-            Contribution.member_id.in_(mids)
-        )
-    ).all()
-    contributed: dict[int, Decimal] = {mid: Decimal("0") for mid in mids}
-    for mid, amt in contrib_rows:
-        contributed[mid] += Decimal(str(amt))
+    z = Decimal("0").quantize(Decimal("0.01"))
 
     split_rows = db.execute(
         select(ExpenseSplit.member_id, ExpenseSplit.amount)
@@ -979,10 +1044,11 @@ def member_balances(db: Session, event_id: int) -> list[MemberBalance]:
     return [
         MemberBalance(
             member_id=m.id,
+            user_id=m.user_id,
             name=m.name,
-            contributed=contributed[m.id].quantize(Decimal("0.01")),
+            contributed=z,
             expended=expended[m.id].quantize(Decimal("0.01")),
-            remaining=(contributed[m.id] - expended[m.id]).quantize(Decimal("0.01")),
+            remaining=z,
         )
         for m in members
     ]
