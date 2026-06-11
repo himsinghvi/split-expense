@@ -39,6 +39,222 @@
   {% endif %}
 </header>
 
+{% if pool_error %}
+<div class="alert alert-danger alert-dismissible fade show d-flex align-items-start gap-2 mb-3" role="alert">
+  <i class="bi bi-exclamation-circle flex-shrink-0 mt-1"></i>
+  <div class="flex-grow-1">{{ pool_error }}</div>
+  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Dismiss"></button>
+</div>
+{% endif %}
+
+<div class="et-section-nav mb-4">
+  <ul class="nav">
+    <li class="nav-item"><a class="nav-link" href="#add-pool"><i class="bi bi-bank me-1"></i>Pool</a></li>
+    <li class="nav-item"><a class="nav-link" href="#balances"><i class="bi bi-pie-chart me-1"></i>Balances</a></li>
+    <li class="nav-item"><a class="nav-link" href="#members"><i class="bi bi-people me-1"></i>Members</a></li>
+    <li class="nav-item"><a class="nav-link" href="#events"><i class="bi bi-calendar-event me-1"></i>Events</a></li>
+    <li class="nav-item"><a class="nav-link" href="#activity"><i class="bi bi-clock-history me-1"></i>Activity</a></li>
+  </ul>
+</div>
+
+<section class="mb-5" id="pool">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+    <div>
+      <h2 class="h4 fw-bold mb-1">Organization pool</h2>
+      <p class="small et-muted mb-0">Shared across every event in this organization.</p>
+    </div>
+    {% if contributions %}
+    <span class="small fw-semibold text-nowrap">{{ contributions | length }} entries · {{ pool_contributed | money }} contributed</span>
+    {% endif %}
+  </div>
+
+  <div class="et-card mb-3 border-success border-opacity-25" style="border-width: 2px;">
+    <div class="et-card-body py-3">
+      <div class="row g-3 text-center align-items-end">
+        <div class="col-12 col-md-4">
+          <p class="et-eyebrow mb-1">Available</p>
+          <span class="fs-4 fw-bold {% if pool_available >= 0 %}text-success{% else %}text-danger{% endif %}">{{ pool_available | money }}</span>
+          <p class="small et-muted mb-0 mt-1">Contributed minus all org expenses</p>
+        </div>
+        <div class="col-6 col-md-4">
+          <span class="small et-muted d-block">Total contributed</span>
+          <span class="fw-semibold">{{ pool_contributed | money }}</span>
+        </div>
+        <div class="col-6 col-md-4">
+          <span class="small et-muted d-block">Total spent (all events)</span>
+          <span class="fw-semibold">{{ pool_spent_org | money }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if org_member_opts %}
+  <form id="add-pool" method="post" action="/orgs/{{ org.id }}/contributions#add-pool" class="et-form-panel mb-4">
+    <h3 class="h6 fw-bold mb-3">Add to pool</h3>
+    <p class="small et-muted mb-3">Log cash or transfers so the organization’s available balance stays accurate.</p>
+    <div class="row g-3">
+      <div class="col-12 col-md-5">
+        <label class="form-label small fw-semibold" for="c_user">Organization member</label>
+        <select class="form-select" name="user_id" id="c_user" required>
+          {% for o in org_member_opts %}
+          <option value="{{ o.user_id }}">{{ o.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small fw-semibold" for="c_amount">Amount</label>
+        <div class="input-group">
+          <span class="input-group-text">₹</span>
+          <input class="form-control" type="number" name="amount" id="c_amount" min="0.01" step="0.01" required placeholder="0.00">
+        </div>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small fw-semibold" for="c_note">Note <span class="fw-normal et-muted">(optional)</span></label>
+        <input class="form-control" type="text" name="note" id="c_note" maxlength="200" placeholder="Venmo, cash…">
+      </div>
+      <div class="col-6 col-md-1 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2"></i></button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <div class="alert alert-secondary small mb-4" role="status">
+    <i class="bi bi-info-circle me-1"></i>Invite <a href="#members" class="alert-link">organization members</a> before you can assign a pool deposit to a person.
+  </div>
+  {% endif %}
+
+  {% if contributions %}
+  <button class="btn btn-outline-secondary btn-sm w-100 d-flex align-items-center justify-content-between gap-2 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#poolHistory" aria-expanded="false" aria-controls="poolHistory">
+    <span><i class="bi bi-list-ul me-1"></i>Pool history</span>
+    <span class="et-muted small">{{ pool_contributed | money }} total</span>
+  </button>
+  <div class="collapse" id="poolHistory">
+  <div class="et-table-wrap mb-3">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle table-sm">
+        <thead><tr><th>When</th><th>Person</th><th class="text-end">Amount</th><th>Note</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>
+          {% for c in contributions %}
+          <tr>
+            <td class="text-nowrap small et-muted">{{ c.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
+            <td class="fw-medium">{{ c.user_name }}</td>
+            <td class="text-end fw-bold text-money-positive">{{ c.amount | money }}</td>
+            <td class="small et-muted">{{ c.note or '—' }}</td>
+            <td class="text-end text-nowrap">
+              {% if c.can_manage %}
+              <button type="button" class="btn btn-link btn-sm p-0 me-2" data-bs-toggle="collapse" data-bs-target="#editContrib{{ c.id }}">Edit</button>
+              <form method="post" action="/orgs/{{ org.id }}/contributions/{{ c.id }}/delete#pool" class="d-inline" onsubmit="return confirm('Delete this pool entry?');">
+                <button type="submit" class="btn btn-link btn-sm p-0 text-danger">Delete</button>
+              </form>
+              {% else %}
+              <span class="small et-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% if c.can_manage %}
+          <tr class="collapse bg-light" id="editContrib{{ c.id }}">
+            <td colspan="5" class="py-3">
+              <form method="post" action="/orgs/{{ org.id }}/contributions/{{ c.id }}/edit#pool" class="row g-2 align-items-end">
+                <div class="col-auto">
+                  <label class="form-label small mb-0">Amount ₹</label>
+                  <input type="number" class="form-control form-control-sm" name="amount" value="{{ c.amount }}" min="0.01" step="0.01" required style="width: 7rem;">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small mb-0">Note</label>
+                  <input type="text" class="form-control form-control-sm" name="note" value="{{ c.note or '' }}" maxlength="200">
+                </div>
+                <div class="col-auto">
+                  <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                </div>
+              </form>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+  {% else %}
+  <div class="et-empty mb-3 py-3">
+    <div class="et-empty-icon"><i class="bi bi-piggy-bank"></i></div>
+    <p class="et-muted mb-0 small">No pool entries yet.</p>
+  </div>
+  {% endif %}
+</section>
+
+<section class="mb-5 pb-1" id="balances">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+      <h2 class="h4 fw-bold mb-1">Balances</h2>
+      <p class="small et-muted mb-0">Per member across all events in this organization</p>
+    </div>
+  </div>
+
+  <div class="et-card mb-3 border-primary border-opacity-25" style="border-width: 2px;">
+    <div class="et-card-body py-3">
+      <p class="et-eyebrow mb-2">Organization totals</p>
+      <div class="row g-3 align-items-end text-center">
+        <div class="col-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Pooled</span>
+            <span class="et-metric-value et-metric-value--pooled fs-5">{{ balance_totals.pooled | money }}</span>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Spent</span>
+            <span class="et-metric-value et-metric-value--expended fs-5">{{ balance_totals.expended | money }}</span>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Left</span>
+            <span class="et-metric-value fs-5 {% if balance_totals.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
+              {{ balance_totals.remaining | money }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    {% for b in org_balances %}
+    <div class="col-md-6 col-xl-4">
+      <div class="et-card h-100">
+        <div class="et-card-body py-3">
+          <h3 class="h6 fw-bold mb-3 text-truncate">{{ b.name }}</h3>
+          <div class="row g-2 text-center">
+            <div class="col-4">
+              <div class="et-metric">
+                <span class="et-metric-label">In</span>
+                <span class="et-metric-value et-metric-value--pooled small">{{ b.contributed | money }}</span>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="et-metric">
+                <span class="et-metric-label">Out</span>
+                <span class="et-metric-value et-metric-value--expended small">{{ b.expended | money }}</span>
+              </div>
+            </div>
+            <div class="col-4">
+              <div class="et-metric">
+                <span class="et-metric-label">Left</span>
+                <span class="et-metric-value small {% if b.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
+                  {{ b.remaining | money }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
 {% if org_activities %}
 <section class="mb-4 et-card overflow-hidden" id="activity">
   <button type="button" class="btn btn-link text-decoration-none text-body w-100 py-3 px-3 d-flex align-items-center justify-content-between rounded-0 collapsed et-activity-toggle"
@@ -107,7 +323,7 @@
   <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
     <div>
       <h2 class="h4 fw-bold mb-1">Events</h2>
-      <p class="small et-muted mb-0">Each event has its own pool, members for splits, and expense log.</p>
+      <p class="small et-muted mb-0">Each event has its own member list for splits and a shared expense log. Money in the <a href="#pool">organization pool</a> is shared across all events.</p>
     </div>
   </div>
 
@@ -119,7 +335,7 @@
       <div class="d-flex flex-wrap gap-2 align-items-center">
         {% if ev.created_by_user_id == current_user_id %}
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#editEv{{ ev.id }}"><i class="bi bi-pencil"></i></button>
-        <form method="post" action="/events/{{ ev.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this event and all pool entries, members, and expenses?');">
+        <form method="post" action="/events/{{ ev.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this event and all members and expenses under it?');">
           <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3"></i></button>
         </form>
         {% endif %}

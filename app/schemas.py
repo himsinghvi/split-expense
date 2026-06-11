@@ -17,6 +17,9 @@ class OrganizationRead(BaseModel):
     id: int
     name: str
     created_by_user_id: int | None = None
+    pool_available: Decimal | None = None
+    pool_total_contributed: Decimal | None = None
+    pool_total_expenses: Decimal | None = None
 
     model_config = {"from_attributes": True}
 
@@ -34,6 +37,7 @@ class EventRead(BaseModel):
     organization_id: int
     name: str
     created_by_user_id: int | None = None
+    organization_pool_available: Decimal | None = None
 
     model_config = {"from_attributes": True}
 
@@ -82,24 +86,23 @@ class MemberUpdate(BaseModel):
     mobile: Optional[str] = None
 
 
-class ContributionCreate(BaseModel):
-    member_id: int
+class OrgPoolContributionCreate(BaseModel):
+    user_id: int
     amount: Decimal = money_positive()
     note: Optional[str] = None
 
 
-class ContributionRead(BaseModel):
+class OrgPoolContributionRead(BaseModel):
     id: int
-    member_id: int
+    organization_id: int
+    user_id: int
     amount: Decimal
     note: Optional[str]
     created_at: str
     created_by_user_id: Optional[int] = None
 
-    model_config = {"from_attributes": True}
 
-
-class ContributionUpdate(BaseModel):
+class OrgPoolContributionUpdate(BaseModel):
     amount: Decimal = money_positive()
     note: Optional[str] = None
 
@@ -148,6 +151,7 @@ class ExpenseRead(BaseModel):
 
 class MemberBalance(BaseModel):
     member_id: int
+    user_id: int | None = None
     name: str
     contributed: Decimal
     expended: Decimal

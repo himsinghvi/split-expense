@@ -2,18 +2,16 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import activity_service, auth_utils, excel_export, services
 from app.deps import get_current_user_api
 from app.database import get_db
-from app.models import Contribution, Expense, Member, OrganizationMember, User
+from app.models import Event, Expense, Member, Organization, OrganizationContribution, OrganizationMember, User
 from app.schemas import (
     ActivityRead,
-    ContributionCreate,
-    ContributionRead,
-    ContributionUpdate,
     EventCreate,
     EventRead,
     EventUpdate,
@@ -25,6 +23,9 @@ from app.schemas import (
     MemberRead,
     MemberUpdate,
     OrgMemberSuggestion,
+    OrgPoolContributionCreate,
+    OrgPoolContributionRead,
+    OrgPoolContributionUpdate,
     OrganizationCreate,
     OrganizationRead,
     OrganizationUpdate,
@@ -74,6 +75,41 @@ def _event_access_or_404(db: Session, user: User, event_id: int):
     if not ev:
         raise HTTPException(status_code=404, detail="Event not found")
     return ev
+
+
+def _event_read_with_pool(db: Session, ev: Event, *, pool: Decimal | None = None) -> EventRead:
+    p = pool if pool is not None else services.org_pool_available(db, ev.organization_id)
+    return EventRead(
+        id=ev.id,
+        organization_id=ev.organization_id,
+        name=ev.name,
+        created_by_user_id=ev.created_by_user_id,
+        organization_pool_available=p,
+    )
+
+
+def _org_pool_entry_read(c: OrganizationContribution) -> OrgPoolContributionRead:
+    return OrgPoolContributionRead(
+        id=c.id,
+        organization_id=c.organization_id,
+        user_id=c.user_id,
+        amount=Decimal(str(c.amount)),
+        note=c.note,
+        created_at=c.created_at.isoformat(),
+        created_by_user_id=c.created_by_user_id,
+    )
+
+
+def _organization_read_with_pool(db: Session, o: Organization) -> OrganizationRead:
+    oid = o.id
+    return OrganizationRead(
+        id=o.id,
+        name=o.name,
+        created_by_user_id=o.created_by_user_id,
+        pool_available=services.org_pool_available(db, oid),
+        pool_total_contributed=services.org_total_contributed(db, oid),
+        pool_total_expenses=services.org_total_expenses(db, oid),
+    )
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
@@ -198,7 +234,10 @@ def api_get_org(
     user: User = Depends(get_current_user_api),
 ):
     _org_member_or_404(db, user, org_id)
-    return services.get_organization(db, org_id)
+    o = services.get_organization(db, org_id)
+    if not o:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return _organization_read_with_pool(db, o)
 
 
 @router.post("/organizations/{org_id}/members")
@@ -227,11 +266,12 @@ def api_patch_organization(
 ):
     _org_member_or_404(db, user, org_id)
     try:
-        return services.update_organization(db, org_id, user.id, payload.name)
+        o2 = services.update_organization(db, org_id, user.id, payload.name)
     except PermissionError as e:
         raise HTTPException(403, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
+    return _organization_read_with_pool(db, o2)
 
 
 @router.delete("/organizations/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -282,11 +322,12 @@ def api_patch_event(
 ):
     _event_access_or_404(db, user, event_id)
     try:
-        return services.update_event(db, event_id, user.id, payload.name)
+        ev2 = services.update_event(db, event_id, user.id, payload.name)
     except PermissionError as e:
         raise HTTPException(403, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
+    return _event_read_with_pool(db, ev2)
 
 
 @router.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -356,26 +397,70 @@ def api_delete_member(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.patch(
-    "/events/{event_id}/contributions/{contribution_id}",
-    response_model=ContributionRead,
+@router.get(
+    "/organizations/{org_id}/contributions",
+    response_model=list[OrgPoolContributionRead],
 )
-def api_patch_contribution(
-    event_id: int,
-    contribution_id: int,
-    payload: ContributionUpdate,
+def api_list_org_contributions(
+    org_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user_api),
 ):
-    _event_access_or_404(db, user, event_id)
-    c = db.get(Contribution, contribution_id)
-    if not c:
-        raise HTTPException(status_code=404, detail="Contribution not found")
-    mem = db.get(Member, c.member_id)
-    if not mem or mem.event_id != event_id:
-        raise HTTPException(status_code=404, detail="Contribution not found")
+    _org_member_or_404(db, user, org_id)
+    rows = list(
+        db.scalars(
+            select(OrganizationContribution)
+            .where(OrganizationContribution.organization_id == org_id)
+            .order_by(OrganizationContribution.created_at.desc())
+        ).all()
+    )
+    return [_org_pool_entry_read(c) for c in rows]
+
+
+@router.post(
+    "/organizations/{org_id}/contributions",
+    response_model=OrgPoolContributionRead,
+)
+def api_add_org_contribution(
+    org_id: int,
+    payload: OrgPoolContributionCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user_api),
+):
+    _org_member_or_404(db, user, org_id)
     try:
-        c2 = services.update_contribution(
+        c = services.add_org_contribution(
+            db,
+            org_id,
+            payload.user_id,
+            payload.amount,
+            payload.note,
+            actor_user_id=user.id,
+        )
+    except PermissionError as e:
+        raise HTTPException(403, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e)) from e
+    return _org_pool_entry_read(c)
+
+
+@router.patch(
+    "/organizations/{org_id}/contributions/{contribution_id}",
+    response_model=OrgPoolContributionRead,
+)
+def api_patch_org_contribution(
+    org_id: int,
+    contribution_id: int,
+    payload: OrgPoolContributionUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user_api),
+):
+    _org_member_or_404(db, user, org_id)
+    c = db.get(OrganizationContribution, contribution_id)
+    if not c or c.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Pool entry not found")
+    try:
+        c2 = services.update_org_contribution(
             db,
             contribution_id,
             user.id,
@@ -386,40 +471,43 @@ def api_patch_contribution(
         raise HTTPException(403, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
-    return ContributionRead(
-        id=c2.id,
-        member_id=c2.member_id,
-        amount=Decimal(str(c2.amount)),
-        note=c2.note,
-        created_at=c2.created_at.isoformat(),
-        created_by_user_id=getattr(c2, "created_by_user_id", None),
-    )
+    return _org_pool_entry_read(c2)
 
 
 @router.delete(
-    "/events/{event_id}/contributions/{contribution_id}",
+    "/organizations/{org_id}/contributions/{contribution_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def api_delete_contribution(
-    event_id: int,
+def api_delete_org_contribution(
+    org_id: int,
     contribution_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user_api),
 ):
-    _event_access_or_404(db, user, event_id)
-    c = db.get(Contribution, contribution_id)
-    if not c:
-        raise HTTPException(status_code=404, detail="Contribution not found")
-    mem = db.get(Member, c.member_id)
-    if not mem or mem.event_id != event_id:
-        raise HTTPException(status_code=404, detail="Contribution not found")
+    _org_member_or_404(db, user, org_id)
+    c = db.get(OrganizationContribution, contribution_id)
+    if not c or c.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Pool entry not found")
     try:
-        services.delete_contribution(db, contribution_id, user.id)
+        services.delete_org_contribution(db, contribution_id, user.id)
     except PermissionError as e:
         raise HTTPException(403, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/organizations/{org_id}/balances",
+    response_model=list[MemberBalance],
+)
+def api_org_balances(
+    org_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user_api),
+):
+    _org_member_or_404(db, user, org_id)
+    return services.org_member_balances(db, org_id)
 
 
 @router.get("/organizations/{org_id}/events", response_model=list[EventRead])
@@ -429,7 +517,9 @@ def api_list_events(
     user: User = Depends(get_current_user_api),
 ):
     _org_member_or_404(db, user, org_id)
-    return services.list_events_for_organization(db, org_id)
+    events = services.list_events_for_organization(db, org_id)
+    pool = services.org_pool_available(db, org_id)
+    return [_event_read_with_pool(db, ev, pool=pool) for ev in events]
 
 
 @router.post("/organizations/{org_id}/events", response_model=EventRead)
@@ -441,9 +531,10 @@ def api_create_event(
 ):
     _org_member_or_404(db, user, org_id)
     try:
-        return services.create_event(db, org_id, user.id, payload.name)
+        ev = services.create_event(db, org_id, user.id, payload.name)
     except PermissionError as e:
         raise HTTPException(403, detail=str(e)) from e
+    return _event_read_with_pool(db, ev)
 
 
 @router.get("/events/{event_id}", response_model=EventRead)
@@ -453,7 +544,7 @@ def api_get_event(
     user: User = Depends(get_current_user_api),
 ):
     ev = _event_access_or_404(db, user, event_id)
-    return ev
+    return _event_read_with_pool(db, ev)
 
 
 @router.get(
@@ -507,56 +598,6 @@ def api_add_member(
         raise HTTPException(403, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
-
-
-@router.post("/events/{event_id}/contributions", response_model=ContributionRead)
-def api_add_contribution(
-    event_id: int,
-    payload: ContributionCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_api),
-):
-    ev = _event_access_or_404(db, user, event_id)
-    member = next((m for m in ev.members if m.id == payload.member_id), None)
-    if not member:
-        raise HTTPException(status_code=400, detail="Member not in this event")
-    if payload.amount <= 0:
-        raise HTTPException(status_code=400, detail="Amount must be positive")
-    c = services.add_contribution(
-        db, payload.member_id, payload.amount, payload.note, actor_user_id=user.id
-    )
-    return ContributionRead(
-        id=c.id,
-        member_id=c.member_id,
-        amount=Decimal(str(c.amount)),
-        note=c.note,
-        created_at=c.created_at.isoformat(),
-        created_by_user_id=getattr(c, "created_by_user_id", None),
-    )
-
-
-@router.get("/events/{event_id}/contributions", response_model=list[ContributionRead])
-def api_list_contributions(
-    event_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user_api),
-):
-    ev = _event_access_or_404(db, user, event_id)
-    rows: list[ContributionRead] = []
-    for m in ev.members:
-        for c in m.contributions:
-            rows.append(
-                ContributionRead(
-                    id=c.id,
-                    member_id=c.member_id,
-                    amount=Decimal(str(c.amount)),
-                    note=c.note,
-                    created_at=c.created_at.isoformat(),
-                    created_by_user_id=getattr(c, "created_by_user_id", None),
-                )
-            )
-    rows.sort(key=lambda r: r.created_at, reverse=True)
-    return rows
 
 
 @router.post("/events/{event_id}/expenses", response_model=ExpenseRead)

@@ -18,11 +18,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenu
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,7 +32,6 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.menuAnchor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,8 +46,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.splitt.expense.SplitExpenseApp
-import com.splitt.expense.network.ContributionCreateRequest
-import com.splitt.expense.network.ContributionRead
 import com.splitt.expense.network.ExpenseCreateRequest
 import com.splitt.expense.network.ExpenseRead
 import com.splitt.expense.network.MemberBalanceRead
@@ -83,8 +76,8 @@ fun EventDetailRoute(
     val context = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
     var title by remember { mutableStateOf("Event") }
+    var orgPoolAvailable by remember { mutableStateOf<Double?>(null) }
     var members by remember { mutableStateOf<List<MemberRead>>(emptyList()) }
-    var contribs by remember { mutableStateOf<List<ContributionRead>>(emptyList()) }
     var expenses by remember { mutableStateOf<List<ExpenseRead>>(emptyList()) }
     var balances by remember { mutableStateOf<List<MemberBalanceRead>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -92,11 +85,6 @@ fun EventDetailRoute(
     var showMember by remember { mutableStateOf(false) }
     var newMemberName by remember { mutableStateOf("") }
     var newMemberMobile by remember { mutableStateOf("") }
-
-    var showContrib by remember { mutableStateOf(false) }
-    var contribMemberId by remember { mutableStateOf<Long?>(null) }
-    var contribAmount by remember { mutableStateOf("") }
-    var contribNote by remember { mutableStateOf("") }
 
     var showExpense by remember { mutableStateOf(false) }
     var expTitle by remember { mutableStateOf("") }
@@ -116,16 +104,6 @@ fun EventDetailRoute(
                     if (!expInclude.containsKey(member.id)) expInclude[member.id] = true
                     if (!expCustomAmounts.containsKey(member.id)) expCustomAmounts[member.id] = ""
                 }
-            } catch (e: Exception) {
-                snackbar.showSnackbar(e.rootMessage())
-            }
-        }
-    }
-
-    fun reloadContribs() {
-        scope.launch {
-            try {
-                contribs = app.api.contributions(eventId)
             } catch (e: Exception) {
                 snackbar.showSnackbar(e.rootMessage())
             }
@@ -156,17 +134,15 @@ fun EventDetailRoute(
         scope.launch {
             loading = true
             try {
-                try {
-                    val ev = app.api.getEvent(eventId)
-                    title = ev.name
-                } catch (_: Exception) { }
+                val ev = app.api.getEvent(eventId)
+                title = ev.name
+                orgPoolAvailable = ev.organizationPoolAvailable
                 val m = app.api.members(eventId)
                 members = m
                 m.forEach { member ->
                     if (!expInclude.containsKey(member.id)) expInclude[member.id] = true
                     if (!expCustomAmounts.containsKey(member.id)) expCustomAmounts[member.id] = ""
                 }
-                contribs = app.api.contributions(eventId)
                 expenses = app.api.expenses(eventId)
                 balances = app.api.balances(eventId)
             } catch (e: Exception) {
@@ -230,20 +206,17 @@ fun EventDetailRoute(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    when (tab) {
-                        0 -> showMember = true
-                        1 -> {
-                            contribMemberId = members.firstOrNull()?.id
-                            showContrib = true
+            if (tab == 0 || tab == 1) {
+                FloatingActionButton(
+                    onClick = {
+                        when (tab) {
+                            0 -> showMember = true
+                            1 -> showExpense = true
                         }
-                        2 -> showExpense = true
-                        else -> snackbar.showSnackbar("Use another tab to add data.")
-                    }
-                },
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
+                    },
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add")
+                }
             }
         },
     ) { padding ->
@@ -254,9 +227,9 @@ fun EventDetailRoute(
         ) {
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Members") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Pool") })
-                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Expenses") })
-                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Balances") })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Expenses") })
+                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Org pool") })
+                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("This event") })
             }
             when (tab) {
                 0 -> LazyColumn(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -278,19 +251,7 @@ fun EventDetailRoute(
                         item { Text("No members. Tap + to add.") }
                     }
                 }
-                1 -> LazyColumn(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(contribs, key = { it.id }) { c ->
-                        val name = members.find { it.id == c.memberId }?.name ?: "Member ${c.memberId}"
-                        ListItem(
-                            headlineContent = { Text("$name · ${formatInr(c.amount)}") },
-                            supportingContent = { Text(c.note ?: "—") },
-                        )
-                    }
-                    if (!loading && contribs.isEmpty()) {
-                        item { Text("No contributions yet.") }
-                    }
-                }
-                2 -> LazyColumn(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                1 -> LazyColumn(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(expenses, key = { it.id }) { ex ->
                         Column(Modifier.fillMaxWidth()) {
                             Text(
@@ -307,17 +268,37 @@ fun EventDetailRoute(
                         item { Text("No expenses yet.") }
                     }
                 }
+                2 -> LazyColumn(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        val p = orgPoolAvailable
+                        Text(
+                            if (p != null) {
+                                "Unspent organization pool: ${formatInr(BigDecimal.valueOf(p))}"
+                            } else {
+                                "Organization pool: —"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                    item {
+                        Text(
+                            "The pool is shared by every event in this organization. Add or edit entries from the organization screen (web).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 3 -> LazyColumn(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(balances, key = { it.memberId }) { b ->
                         ListItem(
                             headlineContent = { Text(b.name) },
                             supportingContent = {
-                                Text("In: ${formatInr(b.contributed)} · Out: ${formatInr(b.expended)} · Remaining: ${formatInr(b.remaining)}")
+                                Text("Share of expenses on this event: ${formatInr(b.expended)}")
                             },
                         )
                     }
                     if (!loading && balances.isEmpty()) {
-                        item { Text("No balance rows (add members first).") }
+                        item { Text("No rows (add members first).") }
                     }
                 }
             }
@@ -369,98 +350,6 @@ fun EventDetailRoute(
             },
             dismissButton = {
                 TextButton(onClick = { showMember = false }) { Text("Cancel") }
-            },
-        )
-    }
-
-    if (showContrib) {
-        AlertDialog(
-            onDismissRequest = { showContrib = false },
-            title = { Text("Add to pool") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    var expanded by remember { mutableStateOf(false) }
-                    val mid = contribMemberId
-                    ExposedDropdownMenuBox(
-                        expanded = expanded,
-                        onExpandedChange = { expanded = !expanded },
-                    ) {
-                        OutlinedTextField(
-                            value = members.find { it.id == mid }?.name ?: "Select member",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Member") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth(),
-                        )
-                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            members.forEach { m ->
-                                DropdownMenuItem(
-                                    text = { Text(m.name) },
-                                    onClick = {
-                                        contribMemberId = m.id
-                                        expanded = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    OutlinedTextField(
-                        contribAmount,
-                        { contribAmount = it },
-                        label = { Text("Amount") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        contribNote,
-                        { contribNote = it },
-                        label = { Text("Note (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val mId = contribMemberId ?: return@TextButton
-                        val amt = try {
-                            BigDecimal(contribAmount.trim()).setScale(2, RoundingMode.HALF_UP)
-                        } catch (_: Exception) {
-                            scope.launch { snackbar.showSnackbar("Invalid amount") }
-                            return@TextButton
-                        }
-                        if (amt <= BigDecimal.ZERO) {
-                            scope.launch { snackbar.showSnackbar("Amount must be positive") }
-                            return@TextButton
-                        }
-                        scope.launch {
-                            try {
-                                app.api.addContribution(
-                                    eventId,
-                                    ContributionCreateRequest(
-                                        memberId = mId,
-                                        amount = amt,
-                                        note = contribNote.trim().ifBlank { null },
-                                    ),
-                                )
-                                contribAmount = ""
-                                contribNote = ""
-                                showContrib = false
-                                reloadContribs()
-                                reloadBalances()
-                            } catch (e: Exception) {
-                                snackbar.showSnackbar(e.rootMessage())
-                            }
-                        }
-                    },
-                ) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showContrib = false }) { Text("Cancel") }
             },
         )
     }
@@ -594,8 +483,7 @@ fun EventDetailRoute(
                                 expTitle = ""
                                 expTotal = ""
                                 showExpense = false
-                                reloadExpenses()
-                                reloadBalances()
+                                reloadAll()
                             } catch (e: Exception) {
                                 snackbar.showSnackbar(e.rootMessage())
                             }

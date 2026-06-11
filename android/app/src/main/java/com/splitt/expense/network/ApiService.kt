@@ -28,6 +28,18 @@ interface ApiService {
     @GET("organizations/{orgId}")
     suspend fun getOrganization(@Path("orgId") orgId: Long): OrganizationRead
 
+    @GET("organizations/{orgId}/balances")
+    suspend fun orgBalances(@Path("orgId") orgId: Long): List<MemberBalanceRead>
+
+    @GET("organizations/{orgId}/contributions")
+    suspend fun orgContributions(@Path("orgId") orgId: Long): List<OrgPoolContributionRead>
+
+    @POST("organizations/{orgId}/contributions")
+    suspend fun addOrgContribution(
+        @Path("orgId") orgId: Long,
+        @Body body: OrgPoolContributionCreateRequest,
+    ): OrgPoolContributionRead
+
     @POST("organizations/{orgId}/members")
     suspend fun inviteOrgMember(
         @Path("orgId") orgId: Long,
@@ -60,15 +72,6 @@ interface ApiService {
         @Path("eventId") eventId: Long,
         @Body body: MemberCreateRequest,
     ): MemberRead
-
-    @GET("events/{eventId}/contributions")
-    suspend fun contributions(@Path("eventId") eventId: Long): List<ContributionRead>
-
-    @POST("events/{eventId}/contributions")
-    suspend fun addContribution(
-        @Path("eventId") eventId: Long,
-        @Body body: ContributionCreateRequest,
-    ): ContributionRead
 
     @GET("events/{eventId}/expenses")
     suspend fun expenses(@Path("eventId") eventId: Long): List<ExpenseRead>

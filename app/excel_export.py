@@ -10,9 +10,11 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import services
+from app.models import OrganizationMember
 
 HEADER_FILL = PatternFill("solid", fgColor="E7E5E4")
 HEADER_FONT = Font(bold=True, size=11)
@@ -68,23 +70,43 @@ def build_event_report_xlsx(db: Session, event_id: int) -> tuple[bytes, str] | N
         return None
 
     org_name = ev.organization.name if ev.organization else ""
-    balances = services.member_balances(db, event_id)
+    org_id = ev.organization_id
+    event_balances = services.member_balances(db, event_id)
+    org_balances = services.org_member_balances(db, org_id)
+    oms = list(
+        db.scalars(
+            select(OrganizationMember).where(OrganizationMember.organization_id == org_id)
+        ).all()
+    )
+    om_id_to_uid = {om.id: om.user_id for om in oms}
+    uid_to_org: dict[int, object] = {}
+    for b in org_balances:
+        uid = om_id_to_uid.get(b.member_id)
+        if uid is not None:
+            uid_to_org[int(uid)] = b
+
     expenses = sorted(
         ev.expenses, key=lambda e: (e.expense_date, e.id), reverse=True
     )
 
+    org_full = services.get_organization(db, org_id)
     contrib_rows: list[tuple[datetime, str, float, str]] = []
-    for m in ev.members:
-        for c in m.contributions:
+    if org_full:
+        for c in sorted(
+            org_full.org_contributions or [],
+            key=lambda x: x.created_at,
+            reverse=True,
+        ):
+            u = c.user
+            label = ((u.full_name or "").strip() or u.mobile) if u else str(c.user_id)
             contrib_rows.append(
                 (
                     c.created_at,
-                    m.name,
+                    label,
                     _money_num(c.amount),
                     (c.note or "").strip(),
                 )
             )
-    contrib_rows.sort(key=lambda r: r[0], reverse=True)
 
     wb = Workbook()
     ws_sum = wb.active
@@ -104,26 +126,42 @@ def build_event_report_xlsx(db: Session, event_id: int) -> tuple[bytes, str] | N
     ws_sum["A5"].font = META_FONT
 
     hdr_row = 7
-    headers_bal = ["Member", "Pooled", "Expended", "Remaining"]
+    pool_avail = services.org_pool_available(db, org_id)
+    ws_sum.cell(row=hdr_row, column=1, value="Organization pool (unspent)")
+    ws_sum.cell(row=hdr_row, column=2, value=float(pool_avail))
+    ws_sum.cell(row=hdr_row, column=1).font = META_FONT
+    ws_sum.cell(row=hdr_row, column=2).font = META_FONT
+    hdr_row += 2
+
+    headers_bal = [
+        "Member",
+        "This event spent",
+        "Org pooled",
+        "Org expended",
+        "Org remaining",
+    ]
     for i, h in enumerate(headers_bal, start=1):
         ws_sum.cell(row=hdr_row, column=i, value=h)
     _style_header_row(ws_sum, hdr_row, 1, len(headers_bal))
 
     r = hdr_row + 1
-    for b in balances:
+    for b in event_balances:
+        m = next((mm for mm in ev.members if mm.id == b.member_id), None)
+        ob = uid_to_org.get(m.user_id) if m and m.user_id else None
         ws_sum.cell(row=r, column=1, value=b.name)
-        ws_sum.cell(row=r, column=2, value=_money_num(b.contributed))
-        ws_sum.cell(row=r, column=3, value=_money_num(b.expended))
-        ws_sum.cell(row=r, column=4, value=_money_num(b.remaining))
-        for c in range(1, 5):
+        ws_sum.cell(row=r, column=2, value=_money_num(b.expended))
+        ws_sum.cell(row=r, column=3, value=_money_num(ob.contributed) if ob else 0.0)
+        ws_sum.cell(row=r, column=4, value=_money_num(ob.expended) if ob else 0.0)
+        ws_sum.cell(row=r, column=5, value=_money_num(ob.remaining) if ob else 0.0)
+        for c in range(1, 6):
             ws_sum.cell(row=r, column=c).border = BORDER
         r += 1
 
-    if balances:
+    if event_balances:
         ws_sum.auto_filter.ref = (
-            f"A{hdr_row}:{get_column_letter(len(headers_bal))}{hdr_row + len(balances)}"
+            f"A{hdr_row}:{get_column_letter(len(headers_bal))}{hdr_row + len(event_balances)}"
         )
-    _auto_width(ws_sum, 1, 4)
+    _auto_width(ws_sum, 1, 5)
 
     ws_exp = wb.create_sheet("Expenses")
     exp_headers = ["Date", "Item", "Category", "Total", "Split summary"]
@@ -148,8 +186,8 @@ def build_event_report_xlsx(db: Session, event_id: int) -> tuple[bytes, str] | N
         ws_exp.auto_filter.ref = f"A1:{get_column_letter(len(exp_headers))}{1 + len(expenses)}"
     _auto_width(ws_exp, 1, 5)
 
-    ws_c = wb.create_sheet("Contributions")
-    ch = ["When (UTC)", "Member", "Amount", "Note"]
+    ws_c = wb.create_sheet("Org pool")
+    ch = ["When (UTC)", "Person", "Amount", "Note"]
     for i, h in enumerate(ch, start=1):
         ws_c.cell(row=1, column=i, value=h)
     _style_header_row(ws_c, 1, 1, len(ch))

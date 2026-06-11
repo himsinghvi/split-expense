@@ -70,9 +70,9 @@
 
 <div class="et-section-nav mb-4">
   <ul class="nav">
-    <li class="nav-item"><a class="nav-link" href="#balances"><i class="bi bi-pie-chart me-1"></i>Balances</a></li>
+    <li class="nav-item"><a class="nav-link" href="#balances"><i class="bi bi-pie-chart me-1"></i>This event</a></li>
+    <li class="nav-item"><a class="nav-link" href="#pool"><i class="bi bi-bank me-1"></i>Org pool</a></li>
     <li class="nav-item"><a class="nav-link" href="#members"><i class="bi bi-person-plus me-1"></i>Members</a></li>
-    <li class="nav-item"><a class="nav-link" href="#pool"><i class="bi bi-bank me-1"></i>Pool</a></li>
     <li class="nav-item"><a class="nav-link" href="#expenses"><i class="bi bi-receipt me-1"></i>Expenses</a></li>
     <li class="nav-item"><a class="nav-link" href="#activity"><i class="bi bi-clock-history me-1"></i>Activity</a></li>
   </ul>
@@ -80,16 +80,16 @@
 
 <section class="mb-5 pb-1" id="balances">
   {% if not members %}
-  <h2 class="h5 fw-bold mb-2">Balances</h2>
+  <h2 class="h5 fw-bold mb-2">This event</h2>
   <div class="alert alert-et-warn d-flex align-items-start gap-2 mb-0" role="alert">
     <i class="bi bi-exclamation-triangle flex-shrink-0 mt-1"></i>
-    <div>Add at least one member before you can record contributions or expenses.</div>
+    <div>Add at least one member before you can record expenses.</div>
   </div>
   {% else %}
   <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <div>
-      <h2 class="h5 fw-bold mb-0">Balances</h2>
-      <p class="small et-muted mb-0">Event-wide totals</p>
+      <h2 class="h5 fw-bold mb-0">This event</h2>
+      <p class="small et-muted mb-0">Expense shares recorded on this event only · <a href="/orgs/{{ organization.id }}#balances">Organization balances</a> live on the org page.</p>
     </div>
     <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="modal" data-bs-target="#modalBalanceHelp">
       <i class="bi bi-question-circle me-1"></i>How it works
@@ -98,26 +98,12 @@
 
   <div class="et-card mb-3 border-primary border-opacity-25" style="border-width: 2px;">
     <div class="et-card-body py-3">
-      <p class="et-eyebrow mb-2">Event totals</p>
+      <p class="et-eyebrow mb-2">Totals for this event</p>
       <div class="row g-3 align-items-end text-center">
-        <div class="col-4">
+        <div class="col-12 col-md-4">
           <div class="et-metric">
-            <span class="et-metric-label">Pooled</span>
-            <span class="et-metric-value et-metric-value--pooled fs-5">{{ balance_totals.pooled | money }}</span>
-          </div>
-        </div>
-        <div class="col-4">
-          <div class="et-metric">
-            <span class="et-metric-label">Spent</span>
+            <span class="et-metric-label">Spent (this event)</span>
             <span class="et-metric-value et-metric-value--expended fs-5">{{ balance_totals.expended | money }}</span>
-          </div>
-        </div>
-        <div class="col-4">
-          <div class="et-metric">
-            <span class="et-metric-label">Left</span>
-            <span class="et-metric-value fs-5 {% if balance_totals.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
-              {{ balance_totals.remaining | money }}
-            </span>
           </div>
         </div>
       </div>
@@ -125,7 +111,7 @@
   </div>
 
   <button class="btn btn-outline-secondary btn-sm w-100" type="button" data-bs-toggle="collapse" data-bs-target="#balancesPeople" aria-expanded="false" aria-controls="balancesPeople">
-    <i class="bi bi-people me-1"></i>Per-person balances ({{ balances | length }})
+    <i class="bi bi-people me-1"></i>Per-person shares on this event ({{ balances | length }})
   </button>
   <div class="collapse mt-3" id="balancesPeople">
     <div class="row g-3">
@@ -138,24 +124,10 @@
             <h3 class="h6 fw-bold mb-0 text-truncate">{{ b.name }}</h3>
           </div>
           <div class="row g-2 text-center">
-            <div class="col-4">
+            <div class="col-12">
               <div class="et-metric">
-                <span class="et-metric-label">In</span>
-                <span class="et-metric-value et-metric-value--pooled small">{{ b.contributed | money }}</span>
-              </div>
-            </div>
-            <div class="col-4">
-              <div class="et-metric">
-                <span class="et-metric-label">Out</span>
+                <span class="et-metric-label">Share of expenses</span>
                 <span class="et-metric-value et-metric-value--expended small">{{ b.expended | money }}</span>
-              </div>
-            </div>
-            <div class="col-4">
-              <div class="et-metric">
-                <span class="et-metric-label">Left</span>
-                <span class="et-metric-value small {% if b.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
-                  {{ b.remaining | money }}
-                </span>
               </div>
             </div>
           </div>
@@ -172,7 +144,7 @@
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
     <div>
       <h2 class="h5 fw-bold mb-0">Members</h2>
-      <p class="small et-muted mb-0">{{ members | length }} on this event · splits and pool</p>
+      <p class="small et-muted mb-0">{{ members | length }} on this event · expense splits</p>
     </div>
     <button type="button" class="btn btn-primary flex-shrink-0" data-bs-toggle="modal" data-bs-target="#modalAddMember">
       <i class="bi bi-person-plus me-1"></i><span class="d-none d-sm-inline">Add member</span><span class="d-sm-none">Add</span>
@@ -197,7 +169,7 @@
     {% if member_manage.get(m.id) %}
     <div class="d-flex flex-wrap gap-2 ms-auto">
       <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#editMem{{ m.id }}">Edit</button>
-      <form method="post" action="/events/{{ event.id }}/members/{{ m.id }}/delete#members" class="d-inline" onsubmit="return confirm('Remove this member? They must have no contributions or expense splits.');">
+      <form method="post" action="/events/{{ event.id }}/members/{{ m.id }}/delete#members" class="d-inline" onsubmit="return confirm('Remove this member? They must have no expense splits on this event.');">
         <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
       </form>
     </div>
@@ -274,103 +246,37 @@
 <section class="mb-5" id="pool">
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
     <div>
-      <h2 class="h5 fw-bold mb-0">Pool</h2>
-      <p class="small et-muted mb-0">Contributions for this event</p>
-    </div>
-    {% if pool_count %}
-    <span class="small fw-semibold text-nowrap">{{ pool_count }} · {{ pool_total | money }}</span>
-    {% endif %}
-  </div>
-
-  {% if contributions %}
-  <button class="btn btn-outline-secondary btn-sm w-100 d-flex align-items-center justify-content-between gap-2 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#poolHistory" aria-expanded="false" aria-controls="poolHistory">
-    <span><i class="bi bi-list-ul me-1"></i>Pool history</span>
-    <span class="et-muted small">{{ pool_total | money }} total</span>
-  </button>
-  <div class="collapse" id="poolHistory">
-  <div class="et-table-wrap mb-3">
-    <div class="table-responsive">
-      <table class="table table-hover align-middle table-sm">
-        <thead><tr><th>When</th><th>Member</th><th class="text-end">Amount</th><th>Note</th><th class="text-end">Actions</th></tr></thead>
-        <tbody>
-          {% for c in contributions %}
-          <tr>
-            <td class="text-nowrap small et-muted">{{ c.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
-            <td class="fw-medium">{{ c.member_name }}</td>
-            <td class="text-end fw-bold text-money-positive">{{ c.amount | money }}</td>
-            <td class="small et-muted">{{ c.note or '—' }}</td>
-            <td class="text-end text-nowrap">
-              {% if c.can_manage %}
-              <button type="button" class="btn btn-link btn-sm p-0 me-2" data-bs-toggle="collapse" data-bs-target="#editContrib{{ c.id }}">Edit</button>
-              <form method="post" action="/events/{{ event.id }}/contributions/{{ c.id }}/delete#pool" class="d-inline" onsubmit="return confirm('Delete this pool entry?');">
-                <button type="submit" class="btn btn-link btn-sm p-0 text-danger">Delete</button>
-              </form>
-              {% else %}
-              <span class="small et-muted">—</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% if c.can_manage %}
-          <tr class="collapse bg-light" id="editContrib{{ c.id }}">
-            <td colspan="5" class="py-3">
-              <form method="post" action="/events/{{ event.id }}/contributions/{{ c.id }}/edit#pool" class="row g-2 align-items-end">
-                <div class="col-auto">
-                  <label class="form-label small mb-0">Amount ₹</label>
-                  <input type="number" class="form-control form-control-sm" name="amount" value="{{ c.amount }}" min="0.01" step="0.01" required style="width: 7rem;">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label small mb-0">Note</label>
-                  <input type="text" class="form-control form-control-sm" name="note" value="{{ c.note or '' }}" maxlength="200">
-                </div>
-                <div class="col-auto">
-                  <button type="submit" class="btn btn-sm btn-primary">Save</button>
-                </div>
-              </form>
-            </td>
-          </tr>
-          {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
+      <h2 class="h5 fw-bold mb-0">Organization pool</h2>
+      <p class="small et-muted mb-0">One shared balance for <strong>{{ organization.name }}</strong> · all events draw from the same pot.</p>
     </div>
   </div>
-  </div>
-  {% else %}
-  <div class="et-empty mb-3 py-3">
-    <div class="et-empty-icon"><i class="bi bi-piggy-bank"></i></div>
-    <p class="et-muted mb-0 small">No pool entries yet.</p>
-  </div>
-  {% endif %}
 
-  {% if members %}
-  <form method="post" action="/events/{{ event.id }}/contributions#pool" class="et-form-panel mt-2">
-    <h3 class="h6 fw-bold mb-3">Add to pool</h3>
-    <div class="row g-3">
-      <div class="col-12 col-md-4">
-        <label class="form-label small fw-semibold" for="c_member">Member</label>
-        <select class="form-select" name="member_id" id="c_member" required>
-          {% for m in members %}
-          <option value="{{ m.id }}">{{ m.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold" for="c_amount">Amount</label>
-        <div class="input-group">
-          <span class="input-group-text">₹</span>
-          <input class="form-control" type="number" name="amount" id="c_amount" min="0.01" step="0.01" required placeholder="0.00">
+  <div class="et-card mb-3 border-success border-opacity-25" style="border-width: 2px;">
+    <div class="et-card-body py-3">
+      <p class="et-eyebrow mb-2">Available for new spending</p>
+      <div class="row g-3 text-center">
+        <div class="col-12 col-md-4">
+          <div class="et-metric">
+            <span class="et-metric-label">Unspent pool</span>
+            <span class="et-metric-value fs-4 {% if org_pool_available >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">{{ org_pool_available | money }}</span>
+          </div>
+        </div>
+        <div class="col-6 col-md-4">
+          <div class="et-metric">
+            <span class="et-metric-label small">Contributed (org)</span>
+            <span class="et-metric-value small">{{ org_total_contributed | money }}</span>
+          </div>
+        </div>
+        <div class="col-6 col-md-4">
+          <div class="et-metric">
+            <span class="et-metric-label small">Spent (all events)</span>
+            <span class="et-metric-value et-metric-value--expended small">{{ org_total_expenses | money }}</span>
+          </div>
         </div>
       </div>
-      <div class="col-12 col-md-3">
-        <label class="form-label small fw-semibold" for="c_note">Note <span class="fw-normal et-muted">(optional)</span></label>
-        <input class="form-control" type="text" name="note" id="c_note" maxlength="200" placeholder="Venmo, cash…">
-      </div>
-      <div class="col-6 col-md-2 d-flex align-items-end">
-        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Add</button>
-      </div>
+      <p class="small et-muted mb-0 mt-3">Add or edit pool entries on the <a href="/orgs/{{ organization.id }}#add-pool">organization page</a>.</p>
     </div>
-  </form>
-  {% endif %}
+  </div>
 </section>
 
 <section class="mb-5" id="expenses">
@@ -477,14 +383,14 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header border-0 pb-0">
-        <h2 class="modal-title fs-5" id="modalBalanceHelpLabel">How balances work</h2>
+        <h2 class="modal-title fs-5" id="modalBalanceHelpLabel">This event vs organization</h2>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body pt-2">
         <ul class="small mb-0 ps-3">
-          <li class="mb-2"><strong>Pooled</strong> is the total each person put into the event pool.</li>
-          <li class="mb-2"><strong>Spent</strong> (expended) is their share of all expenses.</li>
-          <li><strong>Left</strong> is pooled minus spent. If it is negative, they still owe their share.</li>
+          <li class="mb-2">This section shows each person’s <strong>share of expenses on this event only</strong>.</li>
+          <li class="mb-2">Money pooled and org-wide balances (who put in vs spent across all events) are on the <a href="/orgs/{{ organization.id }}#balances">organization</a> page.</li>
+          <li>The <strong>Organization pool</strong> section above shows how much shared money is still available after all expenses in this organization.</li>
         </ul>
       </div>
     </div>

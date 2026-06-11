@@ -20,6 +20,14 @@ def _add_column_if_missing(
     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_suffix}"))
 
 
+def _table_exists(conn, table: str) -> bool:
+    r = conn.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:t"),
+        {"t": table},
+    ).fetchone()
+    return r is not None
+
+
 def run_sqlite_migrations(engine: Engine) -> None:
     if engine.dialect.name != "sqlite":
         return
@@ -36,9 +44,13 @@ def run_sqlite_migrations(engine: Engine) -> None:
         _add_column_if_missing(
             conn, "members", "created_by_user_id", "INTEGER REFERENCES users(id)"
         )
-        _add_column_if_missing(
-            conn, "contributions", "created_by_user_id", "INTEGER REFERENCES users(id)"
-        )
+        if _table_exists(conn, "contributions"):
+            _add_column_if_missing(
+                conn,
+                "contributions",
+                "created_by_user_id",
+                "INTEGER REFERENCES users(id)",
+            )
         _add_column_if_missing(
             conn,
             "organization_members",
@@ -138,7 +150,7 @@ def run_sqlite_migrations(engine: Engine) -> None:
                 """
             )
         )
-        # Expenses / contributions: fall back to event creator.
+        # Expenses: fall back to event creator.
         conn.execute(
             text(
                 """
@@ -152,3 +164,48 @@ def run_sqlite_migrations(engine: Engine) -> None:
                 """
             )
         )
+
+        # Org-wide pool: migrate legacy per-event contributions, then drop old table.
+        if not _table_exists(conn, "organization_contributions"):
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE organization_contributions (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        organization_id INTEGER NOT NULL REFERENCES organizations(id),
+                        user_id INTEGER NOT NULL REFERENCES users(id),
+                        amount NUMERIC(12, 2) NOT NULL,
+                        note TEXT,
+                        created_by_user_id INTEGER REFERENCES users(id),
+                        created_at DATETIME NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+                    )
+                    """
+                )
+            )
+        if _table_exists(conn, "contributions") and _table_exists(
+            conn, "organization_contributions"
+        ):
+            n = conn.execute(
+                text("SELECT COUNT(*) FROM organization_contributions")
+            ).scalar()
+            if n == 0:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO organization_contributions
+                            (organization_id, user_id, amount, note, created_by_user_id, created_at)
+                        SELECT
+                            e.organization_id,
+                            COALESCE(m.user_id, e.created_by_user_id),
+                            c.amount,
+                            c.note,
+                            c.created_by_user_id,
+                            c.created_at
+                        FROM contributions c
+                        JOIN members m ON m.id = c.member_id
+                        JOIN events e ON e.id = m.event_id
+                        WHERE COALESCE(m.user_id, e.created_by_user_id) IS NOT NULL
+                        """
+                    )
+                )
+            conn.execute(text("DROP TABLE IF EXISTS contributions"))
