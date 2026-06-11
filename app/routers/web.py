@@ -2,9 +2,10 @@ import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,19 @@ def _money(d: Decimal | float) -> str:
 
 
 templates.env.filters["money"] = _money
+
+
+def _redirect_event_members(
+    event_id: int, *, error: str | None = None
+) -> RedirectResponse:
+    if error:
+        return RedirectResponse(
+            f"/events/{event_id}?error={quote(str(error))}#members",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    return RedirectResponse(
+        f"/events/{event_id}#members", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -185,6 +199,9 @@ def page_event_detail(
             )
     contrib_rows.sort(key=lambda r: r["created_at"], reverse=True)
 
+    pool_total = sum((r["amount"] for r in contrib_rows), Decimal("0"))
+    pool_count = len(contrib_rows)
+
     mems = sorted(ev.members, key=lambda m: m.id)
     members_opts = [{"id": m.id, "name": m.name} for m in mems]
 
@@ -219,13 +236,35 @@ def page_event_detail(
             "balance_totals": balance_totals,
             "expenses": expenses,
             "contributions": contrib_rows,
+            "pool_total": pool_total,
+            "pool_count": pool_count,
             "title": ev.name,
             "event_activities": event_activities,
             "current_user_id": uid,
             "expense_manage": expense_manage,
             "member_manage": member_manage,
+            "member_error": request.query_params.get("error"),
         },
     )
+
+
+@router.get("/events/{event_id}/members/suggest")
+def get_event_member_suggestions(
+    request: Request,
+    event_id: int,
+    q: str = Query("", max_length=80),
+    db: Session = Depends(get_db),
+):
+    uid = require_session_user(request)
+    if isinstance(uid, RedirectResponse):
+        return uid
+    try:
+        rows = services.suggest_org_users_for_event(db, event_id, uid, q)
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return JSONResponse(rows)
 
 
 @router.post("/events/{event_id}/members")
@@ -234,20 +273,35 @@ def post_add_event_member(
     event_id: int,
     name: str = Form(""),
     mobile: str | None = Form(None),
+    from_org_user_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     uid = require_session_user(request)
     if isinstance(uid, RedirectResponse):
         return uid
+    org_uid: int | None = None
+    if from_org_user_id and str(from_org_user_id).strip():
+        try:
+            org_uid = int(str(from_org_user_id).strip())
+        except ValueError:
+            return _redirect_event_members(
+                event_id,
+                error="Invalid selection. Please pick someone from the list again.",
+            )
     try:
-        services.add_member(db, event_id, name, uid, mobile)
+        services.add_member(
+            db,
+            event_id,
+            name,
+            uid,
+            mobile,
+            from_org_user_id=org_uid,
+        )
     except PermissionError as e:
-        raise HTTPException(403, str(e)) from e
+        return _redirect_event_members(event_id, error=str(e))
     except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    return RedirectResponse(
-        f"/events/{event_id}#members", status_code=status.HTTP_303_SEE_OTHER
-    )
+        return _redirect_event_members(event_id, error=str(e))
+    return _redirect_event_members(event_id)
 
 
 @router.post("/events/{event_id}/contributions")
@@ -459,12 +513,10 @@ def post_edit_event_member(
             mobile=mobile.strip() or None,
         )
     except PermissionError as e:
-        raise HTTPException(403, str(e)) from e
+        return _redirect_event_members(event_id, error=str(e))
     except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    return RedirectResponse(
-        f"/events/{event_id}#members", status_code=status.HTTP_303_SEE_OTHER
-    )
+        return _redirect_event_members(event_id, error=str(e))
+    return _redirect_event_members(event_id)
 
 
 @router.post("/events/{event_id}/members/{member_id}/delete")
@@ -483,12 +535,10 @@ def post_delete_event_member(
     try:
         services.delete_member(db, member_id, uid)
     except PermissionError as e:
-        raise HTTPException(403, str(e)) from e
+        return _redirect_event_members(event_id, error=str(e))
     except ValueError as e:
-        raise HTTPException(400, str(e)) from e
-    return RedirectResponse(
-        f"/events/{event_id}#members", status_code=status.HTTP_303_SEE_OTHER
-    )
+        return _redirect_event_members(event_id, error=str(e))
+    return _redirect_event_members(event_id)
 
 
 @router.post("/events/{event_id}/contributions/{contribution_id}/edit")

@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 import retrofit2.http.Streaming
 
 interface ApiService {
@@ -47,6 +48,12 @@ interface ApiService {
 
     @GET("events/{eventId}/members")
     suspend fun members(@Path("eventId") eventId: Long): List<MemberRead>
+
+    @GET("events/{eventId}/org-member-suggestions")
+    suspend fun orgMemberSuggestions(
+        @Path("eventId") eventId: Long,
+        @Query("q") q: String = "",
+    ): List<OrgMemberSuggestion>
 
     @POST("events/{eventId}/members")
     suspend fun addMember(

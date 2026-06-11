@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def money_positive():
@@ -42,9 +42,29 @@ class EventUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
 
 
+class OrgMemberSuggestion(BaseModel):
+    user_id: int
+    full_name: str
+    mobile: str
+
+
 class MemberCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
+    name: str = Field(default="", max_length=120)
     mobile: Optional[str] = None
+    from_org_user_id: Optional[int] = Field(
+        default=None,
+        description="Add this organization member by user id (from suggestions).",
+    )
+
+    @model_validator(mode="after")
+    def require_identity(self):
+        if self.from_org_user_id is not None:
+            return self
+        if (self.name or "").strip() or (self.mobile or "").strip():
+            return self
+        raise ValueError(
+            "Provide a name, a registered mobile number, or select someone from the organization."
+        )
 
 
 class MemberRead(BaseModel):

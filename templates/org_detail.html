@@ -40,25 +40,34 @@
 </header>
 
 {% if org_activities %}
-<section class="mb-5 et-card" id="activity">
-  <div class="et-card-body">
-    <h2 class="h4 fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>Recent activity</h2>
-    <p class="small et-muted mb-3">Updates for you in this organization.</p>
-    <ul class="list-group list-group-flush">
-      {% for a in org_activities %}
-      <li class="list-group-item d-flex justify-content-between align-items-start gap-2 {% if not a.read_at %}list-group-item-light{% endif %}">
-        <div>
-          <span class="small text-uppercase et-muted d-block mb-1" style="font-size: 0.7rem;">{{ a.kind | replace('_', ' ') }}</span>
-          <span>{{ a.summary }}</span>
-          <span class="small et-muted d-block">{{ a.created_at.strftime('%b %d, %Y · %H:%M') }}</span>
-        </div>
-        {% if a.event_id %}
-        <a href="/events/{{ a.event_id }}" class="btn btn-sm btn-outline-primary flex-shrink-0">Event</a>
-        {% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    <p class="small et-muted mt-3 mb-0"><a href="/notifications">View all notifications →</a></p>
+<section class="mb-4 et-card overflow-hidden" id="activity">
+  <button type="button" class="btn btn-link text-decoration-none text-body w-100 py-3 px-3 d-flex align-items-center justify-content-between rounded-0 collapsed et-activity-toggle"
+          data-bs-toggle="collapse" data-bs-target="#orgActivityCollapse" aria-expanded="false" aria-controls="orgActivityCollapse">
+    <span class="fw-semibold"><i class="bi bi-clock-history me-2 text-secondary"></i>Recent activity</span>
+    <span class="d-flex align-items-center gap-2">
+      <span class="badge rounded-pill bg-secondary bg-opacity-10 text-secondary border">{{ org_activities | length }}</span>
+      <i class="bi bi-chevron-down et-collapse-chevron text-muted"></i>
+    </span>
+  </button>
+  <div id="orgActivityCollapse" class="collapse">
+    <div class="border-top px-3 pb-3 pt-1">
+      <p class="small et-muted mb-2 mt-2">Updates for you in this organization.</p>
+      <ul class="list-group list-group-flush">
+        {% for a in org_activities %}
+        <li class="list-group-item px-0 d-flex justify-content-between align-items-start gap-2 {% if not a.read_at %}bg-light bg-opacity-50{% endif %}">
+          <div class="min-w-0">
+            <span class="small text-uppercase et-muted d-block mb-1" style="font-size: 0.68rem;">{{ a.kind | replace('_', ' ') }}</span>
+            <span class="small">{{ a.summary }}</span>
+            <span class="small et-muted d-block mt-1">{{ a.created_at.strftime('%b %d, %Y · %H:%M') }}</span>
+          </div>
+          {% if a.event_id %}
+          <a href="/events/{{ a.event_id }}" class="btn btn-sm btn-outline-primary flex-shrink-0">Event</a>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="small et-muted mb-0 mt-2"><a href="/notifications">View all notifications</a></p>
+    </div>
   </div>
 </section>
 {% endif %}

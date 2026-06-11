@@ -1,7 +1,8 @@
+import re
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -29,6 +30,93 @@ from app.schemas import ExpenseCreate, ExpenseSplitInput, MemberBalance
 def get_user_by_mobile(db: Session, mobile: str) -> User | None:
     key = normalize_mobile(mobile)
     return db.scalar(select(User).where(User.mobile == key))
+
+
+def _digits_only(raw: str) -> str:
+    return re.sub(r"\D", "", raw or "")
+
+
+def _safe_ilike_fragment(q: str) -> str:
+    """Escape LIKE wildcards for use with ESCAPE '\\\\'."""
+    return (
+        (q or "")
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def _event_member_user_ids(db: Session, event_id: int) -> set[int]:
+    rows = db.scalars(
+        select(Member.user_id).where(
+            Member.event_id == event_id,
+            Member.user_id.isnot(None),
+        )
+    ).all()
+    return {int(x) for x in rows if x is not None}
+
+
+def _event_has_member_with_user_id(
+    db: Session, event_id: int, user_id: int, *, exclude_member_id: int | None = None
+) -> bool:
+    q = select(Member.id).where(
+        Member.event_id == event_id,
+        Member.user_id == user_id,
+    )
+    if exclude_member_id is not None:
+        q = q.where(Member.id != exclude_member_id)
+    return db.scalar(q) is not None
+
+
+def suggest_org_users_for_event(
+    db: Session,
+    event_id: int,
+    acting_user_id: int,
+    query: str,
+    *,
+    limit: int = 50,
+) -> list[dict[str, int | str]]:
+    """Org roster users not yet on this event; filter by display name or mobile digits."""
+    if not user_can_access_event(db, acting_user_id, event_id):
+        raise PermissionError("You cannot view this event.")
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise ValueError("Event not found.")
+    org_id = ev.organization_id
+    taken = _event_member_user_ids(db, event_id)
+
+    stmt = (
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(OrganizationMember.organization_id == org_id)
+    )
+    if taken:
+        stmt = stmt.where(User.id.notin_(taken))
+
+    q = (query or "").strip()
+    digits = _digits_only(q)
+    has_letters = bool(re.search(r"[A-Za-z\u0080-\uFFFF]", q))
+    if q:
+        pat = f"%{_safe_ilike_fragment(q)}%"
+        if digits and not has_letters:
+            stmt = stmt.where(User.mobile.contains(digits))
+        elif digits:
+            stmt = stmt.where(
+                or_(User.full_name.ilike(pat, escape="\\"), User.mobile.contains(digits))
+            )
+        else:
+            stmt = stmt.where(User.full_name.ilike(pat, escape="\\"))
+
+    stmt = stmt.order_by(User.full_name.asc(), User.mobile.asc()).limit(limit)
+    users = list(db.scalars(stmt).unique().all())
+    return [
+        {
+            "user_id": u.id,
+            "full_name": (u.full_name or "").strip() or u.mobile,
+            "mobile": u.mobile,
+        }
+        for u in users
+    ]
 
 
 def create_user(db: Session, mobile: str, password_hash: str, full_name: str) -> User:
@@ -254,22 +342,57 @@ def add_member(
     name: str,
     acting_user_id: int,
     mobile: str | None = None,
+    *,
+    from_org_user_id: int | None = None,
 ) -> Member:
     if not user_can_access_event(db, acting_user_id, event_id):
         raise PermissionError("You cannot edit this event.")
+
     uid: int | None = None
     name_stripped = (name or "").strip()
-    if mobile and (m := mobile.strip()):
-        u = get_user_by_mobile(db, m)
+
+    if from_org_user_id is not None:
+        ev = db.get(Event, event_id)
+        if not ev:
+            raise ValueError("Event not found.")
+        if not user_in_organization(db, from_org_user_id, ev.organization_id):
+            raise ValueError(
+                "That person is not in this organization, so they cannot be added from the roster."
+            )
+        target = db.get(User, from_org_user_id)
+        if not target:
+            raise ValueError("That user no longer exists.")
+        if _event_has_member_with_user_id(db, event_id, target.id):
+            label = (target.full_name or "").strip() or target.mobile
+            raise ValueError(f'"{label}" is already a member of this event.')
+        uid = target.id
+        name_stripped = ((target.full_name or "").strip() or target.mobile) or target.mobile
+    elif mobile and (m := mobile.strip()):
+        try:
+            u = get_user_by_mobile(db, m)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
         if not u:
-            raise ValueError("No user registered with that mobile number.")
+            raise ValueError(
+                "No account matches that mobile number. Ask them to register first, "
+                "or pick someone from your organization list."
+            )
         uid = u.id
         if not name_stripped:
-            name_stripped = u.full_name or u.mobile
-    if not name_stripped:
+            name_stripped = (u.full_name or "").strip() or u.mobile
+        if _event_has_member_with_user_id(db, event_id, uid):
+            raise ValueError(
+                f'"{name_stripped}" is already on this event (linked to the same account).'
+            )
+    elif not name_stripped:
         raise ValueError(
-            "Name is required (or provide a registered mobile to use their profile)."
+            "Choose someone from the organization search, enter a display name, "
+            "or enter a registered mobile number."
         )
+
+    if not name_stripped:
+        raise ValueError("Display name is required.")
+
     mem = Member(
         event_id=event_id,
         name=name_stripped,
@@ -598,12 +721,24 @@ def update_member(
     name_stripped = (name or "").strip()
     uid: int | None = mem.user_id
     if mobile is not None and (m := mobile.strip()):
-        u = get_user_by_mobile(db, m)
+        try:
+            u = get_user_by_mobile(db, m)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
         if not u:
-            raise ValueError("No user registered with that mobile number.")
+            raise ValueError(
+                "No account matches that mobile number. Ask them to register first."
+            )
+        if _event_has_member_with_user_id(
+            db, mem.event_id, u.id, exclude_member_id=mem.id
+        ):
+            raise ValueError(
+                "Another member on this event is already linked to that account. "
+                "Remove or relink the other row first."
+            )
         uid = u.id
         if not name_stripped:
-            name_stripped = u.full_name or u.mobile
+            name_stripped = (u.full_name or "").strip() or u.mobile
     if name_stripped:
         mem.name = name_stripped
     mem.user_id = uid
