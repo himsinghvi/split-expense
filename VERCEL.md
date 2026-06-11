@@ -1,30 +1,42 @@
 # Deploying on Vercel
 
-Vercel **serverless** runtimes only allow writing under **`/tmp`**. A SQLite file like `./app_data.db` in the project directory **will fail** (500 / `FUNCTION_INVOCATION_FAILED`) because the filesystem is read-only.
+Vercel **serverless** workers do not give you a durable writable disk. A SQLite file in the project directory **fails** (read-only FS). SQLite under `/tmp` **appears to work** but data is **lost** on cold starts, new instances, and redeploys — which looks like “logout then everything is gone”.
 
-This repo handles that automatically: when `VERCEL` or `VERCEL_ENV` is set, the app uses **SQLite under the OS temp directory** (on Vercel that is writable storage under `/tmp`) unless you override with **`DATABASE_URL`**.
+**Production rule:** set **`DATABASE_URL`** to **Postgres** (this repo ships the **`psycopg`** driver). The app **requires** `DATABASE_URL` when `VERCEL` / `VERCEL_ENV` is set.
 
-## Required environment variables
+## 1. Create a Postgres database (Neon)
 
-Set these in the Vercel project **Settings → Environment Variables**:
+1. Sign up at [Neon](https://neon.tech) and create a project + database.
+2. Copy the **connection string** (often `postgresql://...` or `postgres://...` with `sslmode=require`).
+3. Paste it as **`DATABASE_URL`** in Vercel. The app normalizes `postgres://` → `postgresql+psycopg://` so Neon’s default string usually works as-is.
+
+## 2. Required environment variables
+
+Set these in **Vercel → Project → Settings → Environment Variables** (apply to **Production** and **Preview** as needed):
 
 | Variable | Why |
 |----------|-----|
+| **`DATABASE_URL`** | **Required on Vercel.** Persistent storage for users, orgs, expenses. Without it the app fails fast at startup instead of silently losing data. |
 | `SECRET_KEY` | Stable value (e.g. 32+ random bytes). If missing, a new key is generated on every cold start and **signed sessions / JWTs break** between invocations. |
 | `SESSION_SECRET` | Optional; defaults to `SECRET_KEY`. Used for the web session cookie. |
 | `JWT_SECRET` | Optional; defaults to `SECRET_KEY`. Used for API JWTs. |
 
-## Data persistence
+After changing env vars, **redeploy** so new values apply.
 
-- **`/tmp` SQLite** is only suitable for demos: data can disappear between cold starts or scaling events.
-- For a real deployment, set **`DATABASE_URL`** to a hosted database (e.g. [Neon](https://neon.tech) Postgres). You will need a SQLAlchemy-compatible URL and the matching driver (e.g. add `psycopg[binary]` to `requirements.txt` for `postgresql+psycopg://...`).
+## 3. Local development
 
-## Static files
+Without `VERCEL` / `VERCEL_ENV`, the app still defaults to **`sqlite:///./app_data.db`** in the project directory.
 
-Vercel serves files under **`public/`** from the CDN. This app still mounts **`/static`** from the `static/` folder when that directory exists in the deployment bundle (normal for this repo). If you move assets, keep `static/` in the repo or adjust `app/main.py` and templates accordingly.
+To test against Postgres locally, set `DATABASE_URL` to the same Neon (or local) URL.
 
-## Entrypoint
+## 4. Migrations
+
+`app/main.py` runs `Base.metadata.create_all` on startup. `app/db_migrate.py` only applies **SQLite** additive migrations; on Postgres, `create_all` defines the schema for a fresh database.
+
+## 5. Static files
+
+Vercel serves files under **`public/`** from the CDN. This app mounts **`/static`** from the `static/` folder when that directory exists in the deployment bundle.
+
+## 6. Entrypoint
 
 `pyproject.toml` defines **`[project]`** (required by Vercel’s **`uv lock`** install) and **`[tool.vercel] entrypoint`**. Dependency pins are mirrored in **`requirements.txt`** for local `pip install -r`; keep them aligned when you upgrade packages.
-
-After changing env vars, redeploy.
