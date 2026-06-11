@@ -130,7 +130,7 @@ body.et-body {
 }
 
 .et-section-nav .nav {
-  gap: 0.25rem;
+  gap: 0.35rem;
   flex-wrap: nowrap;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -141,9 +141,29 @@ body.et-body {
   display: none;
 }
 
-.et-section-nav .nav {
-  gap: 0.35rem;
-  flex-wrap: wrap;
+/* Activity + collapsible chevrons */
+.et-activity-toggle .et-collapse-chevron {
+  transition: transform 0.2s ease;
+}
+
+.et-activity-toggle:not(.collapsed) .et-collapse-chevron {
+  transform: rotate(180deg);
+}
+
+/* Org member suggestions (modal / mobile) */
+.et-suggest-list {
+  z-index: 1060;
+  max-height: min(45vh, 260px);
+  overflow-y: auto;
+}
+
+.et-suggest-row {
+  border-left: none;
+  border-right: none;
+}
+
+.et-suggest-row:first-child {
+  border-top: none;
 }
 
 .et-section-nav .nav-link {

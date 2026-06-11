@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from app.schemas import (
     MemberCreate,
     MemberRead,
     MemberUpdate,
+    OrgMemberSuggestion,
     OrganizationCreate,
     OrganizationRead,
     OrganizationUpdate,
@@ -455,6 +456,26 @@ def api_get_event(
     return ev
 
 
+@router.get(
+    "/events/{event_id}/org-member-suggestions",
+    response_model=list[OrgMemberSuggestion],
+)
+def api_org_member_suggestions(
+    event_id: int,
+    q: str = Query("", max_length=80, description="Filter by name or mobile digits"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user_api),
+):
+    _event_access_or_404(db, user, event_id)
+    try:
+        rows = services.suggest_org_users_for_event(db, event_id, user.id, q)
+    except PermissionError as e:
+        raise HTTPException(403, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e)) from e
+    return [OrgMemberSuggestion(**r) for r in rows]
+
+
 @router.get("/events/{event_id}/members", response_model=list[MemberRead])
 def api_list_members(
     event_id: int,
@@ -475,7 +496,12 @@ def api_add_member(
     _event_access_or_404(db, user, event_id)
     try:
         return services.add_member(
-            db, event_id, payload.name, user.id, payload.mobile
+            db,
+            event_id,
+            payload.name,
+            user.id,
+            payload.mobile,
+            from_org_user_id=payload.from_org_user_id,
         )
     except PermissionError as e:
         raise HTTPException(403, detail=str(e)) from e

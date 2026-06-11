@@ -26,18 +26,32 @@
   </ol>
 </nav>
 
-<header class="mb-4">
-  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-2">
-    <div>
-      <h1 class="et-hero-title mb-2">{{ event.name }}</h1>
-      <p class="et-hero-lead mb-0">Pool contributions and per-person splits on every expense.</p>
+<header class="mb-3">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
+    <div class="min-w-0 flex-grow-1">
+      <h1 class="et-hero-title mb-1 text-break">{{ event.name }}</h1>
+      <p class="small et-muted mb-0">{{ organization.name }}</p>
     </div>
     {% if event.created_by_user_id == current_user_id %}
-    <div class="d-flex flex-wrap gap-2">
-      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="collapse" data-bs-target="#editEventPanel"><i class="bi bi-pencil me-1"></i>Edit name</button>
-      <form method="post" action="/events/{{ event.id }}/delete" class="d-inline" onsubmit="return confirm('Delete this event and all data under it?');">
-        <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3 me-1"></i>Delete event</button>
-      </form>
+    <div class="dropdown flex-shrink-0">
+      <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Event options">
+        <i class="bi bi-gear"></i><span class="d-none d-sm-inline ms-1">Manage</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow">
+        <li>
+          <button type="button" class="dropdown-item" data-bs-toggle="collapse" data-bs-target="#editEventPanel" aria-expanded="false">
+            <i class="bi bi-pencil me-2"></i>Rename event
+          </button>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <form method="post" action="/events/{{ event.id }}/delete" class="px-3 py-1" onsubmit="return confirm('Delete this event and all data under it?');">
+            <button type="submit" class="btn btn-link text-danger p-0 small text-decoration-none">
+              <i class="bi bi-trash3 me-2"></i>Delete event
+            </button>
+          </form>
+        </li>
+      </ul>
     </div>
     {% endif %}
   </div>
@@ -64,67 +78,44 @@
   </ul>
 </div>
 
-{% if event_activities %}
-<section class="mb-5 et-card" id="activity">
-  <div class="et-card-body">
-    <h2 class="h4 fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>Event activity</h2>
-    <p class="small et-muted mb-3">Updates for you in this event.</p>
-    <ul class="list-group list-group-flush">
-      {% for a in event_activities %}
-      <li class="list-group-item {% if not a.read_at %}list-group-item-light{% endif %}">
-        <span class="small text-uppercase et-muted d-block mb-1" style="font-size: 0.7rem;">{{ a.kind | replace('_', ' ') }}</span>
-        <span>{{ a.summary }}</span>
-        <span class="small et-muted d-block">{{ a.created_at.strftime('%b %d, %Y · %H:%M') }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-    <p class="small et-muted mt-3 mb-0"><a href="/notifications">All notifications →</a></p>
-  </div>
-</section>
-{% endif %}
-
 <section class="mb-5 pb-1" id="balances">
-  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-    <div>
-      <h2 class="h4 fw-bold mb-1">Balances</h2>
-      <p class="small et-muted mb-0">Pooled in · Spent share · What is left</p>
-    </div>
-  </div>
-
   {% if not members %}
+  <h2 class="h5 fw-bold mb-2">Balances</h2>
   <div class="alert alert-et-warn d-flex align-items-start gap-2 mb-0" role="alert">
     <i class="bi bi-exclamation-triangle flex-shrink-0 mt-1"></i>
     <div>Add at least one member before you can record contributions or expenses.</div>
   </div>
   {% else %}
-  <div class="alert alert-et-info d-flex align-items-start gap-2 mb-4 py-3" role="note">
-    <i class="bi bi-lightbulb flex-shrink-0 mt-1"></i>
-    <div class="small"><strong>Pooled</strong> is what they put in. <strong class="text-expended">Expended</strong> is their share of all bills. <strong class="text-money-positive">Remaining</strong> is pooled minus expended (red if they are short).</div>
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+      <h2 class="h5 fw-bold mb-0">Balances</h2>
+      <p class="small et-muted mb-0">Event-wide totals</p>
+    </div>
+    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="modal" data-bs-target="#modalBalanceHelp">
+      <i class="bi bi-question-circle me-1"></i>How it works
+    </button>
   </div>
 
-  <div class="et-card mb-4 border-primary border-opacity-25" style="border-width: 2px;">
-    <div class="et-card-body py-4">
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <p class="et-eyebrow mb-0">Event totals</p>
-        <span class="small et-muted">Sum across everyone</span>
-      </div>
-      <div class="row g-4 align-items-end">
-        <div class="col-md-4">
+  <div class="et-card mb-3 border-primary border-opacity-25" style="border-width: 2px;">
+    <div class="et-card-body py-3">
+      <p class="et-eyebrow mb-2">Event totals</p>
+      <div class="row g-3 align-items-end text-center">
+        <div class="col-4">
           <div class="et-metric">
-            <span class="et-metric-label">Total pooled</span>
-            <span class="et-metric-value et-metric-value--pooled fs-4">{{ balance_totals.pooled | money }}</span>
+            <span class="et-metric-label">Pooled</span>
+            <span class="et-metric-value et-metric-value--pooled fs-5">{{ balance_totals.pooled | money }}</span>
           </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-4">
           <div class="et-metric">
-            <span class="et-metric-label">Total expense</span>
-            <span class="et-metric-value et-metric-value--expended fs-4">{{ balance_totals.expended | money }}</span>
+            <span class="et-metric-label">Spent</span>
+            <span class="et-metric-value et-metric-value--expended fs-5">{{ balance_totals.expended | money }}</span>
           </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-4">
           <div class="et-metric">
-            <span class="et-metric-label">Total left</span>
-            <span class="et-metric-value fs-4 {% if balance_totals.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
+            <span class="et-metric-label">Left</span>
+            <span class="et-metric-value fs-5 {% if balance_totals.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
               {{ balance_totals.remaining | money }}
             </span>
           </div>
@@ -133,32 +124,36 @@
     </div>
   </div>
 
-  <div class="row g-3">
+  <button class="btn btn-outline-secondary btn-sm w-100" type="button" data-bs-toggle="collapse" data-bs-target="#balancesPeople" aria-expanded="false" aria-controls="balancesPeople">
+    <i class="bi bi-people me-1"></i>Per-person balances ({{ balances | length }})
+  </button>
+  <div class="collapse mt-3" id="balancesPeople">
+    <div class="row g-3">
     {% for b in balances %}
     <div class="col-md-6 col-xl-4">
       <div class="et-card h-100">
-        <div class="et-card-body">
-          <div class="d-flex align-items-center gap-3 mb-4">
+        <div class="et-card-body py-3">
+          <div class="d-flex align-items-center gap-3 mb-3">
             <div class="et-avatar">{{ member_initials(b.name) }}</div>
-            <h3 class="h5 fw-bold mb-0 text-truncate">{{ b.name }}</h3>
+            <h3 class="h6 fw-bold mb-0 text-truncate">{{ b.name }}</h3>
           </div>
-          <div class="row g-3">
+          <div class="row g-2 text-center">
             <div class="col-4">
               <div class="et-metric">
-                <span class="et-metric-label">Pooled</span>
-                <span class="et-metric-value et-metric-value--pooled">{{ b.contributed | money }}</span>
+                <span class="et-metric-label">In</span>
+                <span class="et-metric-value et-metric-value--pooled small">{{ b.contributed | money }}</span>
               </div>
             </div>
             <div class="col-4">
               <div class="et-metric">
-                <span class="et-metric-label">Expended</span>
-                <span class="et-metric-value et-metric-value--expended">{{ b.expended | money }}</span>
+                <span class="et-metric-label">Out</span>
+                <span class="et-metric-value et-metric-value--expended small">{{ b.expended | money }}</span>
               </div>
             </div>
             <div class="col-4">
               <div class="et-metric">
                 <span class="et-metric-label">Left</span>
-                <span class="et-metric-value {% if b.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
+                <span class="et-metric-value small {% if b.remaining >= 0 %}et-metric-value--remaining-pos{% else %}et-metric-value--remaining-neg{% endif %}">
                   {{ b.remaining | money }}
                 </span>
               </div>
@@ -168,23 +163,36 @@
       </div>
     </div>
     {% endfor %}
+    </div>
   </div>
   {% endif %}
 </section>
 
 <section class="mb-5" id="members">
-  <h2 class="h4 fw-bold mb-1">Members</h2>
-  <p class="small et-muted mb-4">Everyone who can appear on splits and contributions.</p>
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+    <div>
+      <h2 class="h5 fw-bold mb-0">Members</h2>
+      <p class="small et-muted mb-0">{{ members | length }} on this event · splits and pool</p>
+    </div>
+    <button type="button" class="btn btn-primary flex-shrink-0" data-bs-toggle="modal" data-bs-target="#modalAddMember">
+      <i class="bi bi-person-plus me-1"></i><span class="d-none d-sm-inline">Add member</span><span class="d-sm-none">Add</span>
+    </button>
+  </div>
+
+  {% if member_error %}
+  <div class="alert alert-danger alert-dismissible fade show d-flex align-items-start gap-2 mb-3" role="alert">
+    <i class="bi bi-exclamation-circle flex-shrink-0 mt-1"></i>
+    <div class="flex-grow-1">{{ member_error }}</div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Dismiss"></button>
+  </div>
+  {% endif %}
 
   {% for m in members %}
   <div class="et-member-row flex-wrap">
     <div class="et-avatar">{{ member_initials(m.name) }}</div>
     <div class="flex-grow-1 min-w-0">
       <div class="fw-semibold text-truncate">{{ m.name }}</div>
-      <div class="small et-muted">
-        Member ID {{ m.id }}
-        {% if m.user %} · Linked {{ m.user.mobile }}{% endif %}
-      </div>
+      <div class="small et-muted text-truncate">{% if m.user %}<i class="bi bi-phone me-1"></i>{{ m.user.mobile }}{% else %}No account linked{% endif %}</div>
     </div>
     {% if member_manage.get(m.id) %}
     <div class="d-flex flex-wrap gap-2 ms-auto">
@@ -195,52 +203,94 @@
     </div>
     <div class="collapse w-100 mt-2" id="editMem{{ m.id }}">
       <form method="post" action="/events/{{ event.id }}/members/{{ m.id }}/edit#members" class="row g-2 align-items-end border-top pt-3">
-        <div class="col-md-5">
+        <div class="col-12 col-sm-5">
           <label class="form-label small mb-0">Display name</label>
           <input type="text" class="form-control form-control-sm" name="name" value="{{ m.name }}" maxlength="120">
         </div>
-        <div class="col-md-4">
+        <div class="col-12 col-sm-5">
           <label class="form-label small mb-0">Mobile (optional)</label>
           <input type="tel" class="form-control form-control-sm" name="mobile" value="{{ m.user.mobile if m.user else '' }}" maxlength="20" placeholder="Registered mobile">
         </div>
-        <div class="col-md-3">
-          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        <div class="col-12 col-sm-2">
+          <button type="submit" class="btn btn-sm btn-primary w-100 mt-3 mt-sm-4">Save</button>
         </div>
       </form>
     </div>
     {% endif %}
   </div>
   {% else %}
-  <div class="et-empty mb-4">
+  <div class="et-empty mb-3 py-4">
     <div class="et-empty-icon"><i class="bi bi-people"></i></div>
-    <p class="et-muted mb-0">No members yet. Add the first person below.</p>
+    <p class="et-muted mb-2">No members yet.</p>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalAddMember">Add the first member</button>
   </div>
   {% endfor %}
-
-  <form method="post" action="/events/{{ event.id }}/members" class="et-form-panel mt-3">
-    <label for="member_name" class="form-label fw-semibold">Display name on this event</label>
-    <div class="input-group input-group-lg mb-3">
-      <span class="input-group-text bg-white border-end-0"><i class="bi bi-person et-muted"></i></span>
-      <input type="text" class="form-control border-start-0 ps-0" id="member_name" name="name" maxlength="120" placeholder="Name as it should appear on splits">
-    </div>
-    <label for="member_mobile" class="form-label fw-semibold">Registered mobile <span class="fw-normal et-muted">(optional)</span></label>
-    <div class="input-group input-group-lg">
-      <span class="input-group-text bg-white border-end-0"><i class="bi bi-phone et-muted"></i></span>
-      <input type="tel" class="form-control border-start-0 ps-0" id="member_mobile" name="mobile" maxlength="20" placeholder="If set, must match an existing account">
-      <button type="submit" class="btn btn-primary px-4"><i class="bi bi-plus-lg me-1"></i>Add</button>
-    </div>
-    <p class="small et-muted mt-2 mb-0">Provide a name, or only a mobile number of someone who already registered.</p>
-  </form>
 </section>
 
+<div class="modal fade" id="modalAddMember" tabindex="-1" aria-labelledby="modalAddMemberLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5" id="modalAddMemberLabel">Add member</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="/events/{{ event.id }}/members" id="form-add-event-member" autocomplete="off">
+        <div class="modal-body">
+          {% if member_error %}
+          <div class="alert alert-danger py-2 small mb-3" role="alert">{{ member_error }}</div>
+          {% endif %}
+          <input type="hidden" name="from_org_user_id" id="om_from_org_user_id" value="">
+          <div id="om_client_error" class="alert alert-warning py-2 small d-none mb-3" role="alert"></div>
+          <label for="om_search" class="form-label fw-semibold">From organization</label>
+          <p class="small et-muted mb-2">Search by name or mobile digits. Use <strong>Add</strong> on a row for one tap, or tap the name then <strong>Add selected</strong>.</p>
+          <div class="position-relative mb-2">
+            <div class="input-group">
+              <span class="input-group-text bg-white border-end-0"><i class="bi bi-search et-muted"></i></span>
+              <input type="text" class="form-control border-start-0 ps-0" id="om_search" maxlength="80" placeholder="Name or digits…" autocomplete="off">
+            </div>
+            <ul id="om_suggestions" class="list-group position-absolute w-100 shadow rounded-bottom d-none mt-1 et-suggest-list" role="listbox" aria-label="Organization members"></ul>
+          </div>
+          <div class="d-grid d-sm-flex gap-2 mb-3">
+            <button type="button" class="btn btn-outline-primary order-sm-1" id="om_btn_add_selected" disabled>Add selected</button>
+            <button type="button" class="btn btn-outline-secondary order-sm-0" id="om_clear_pick" disabled>Clear</button>
+          </div>
+          <hr class="my-3">
+          <p class="small fw-semibold mb-2">Add manually</p>
+          <label for="member_name" class="form-label small">Display name</label>
+          <input type="text" class="form-control mb-2" id="member_name" name="name" maxlength="120" placeholder="Shown on splits (no account)">
+          <label for="member_mobile" class="form-label small">Registered mobile <span class="fw-normal et-muted">(optional)</span></label>
+          <input type="tel" class="form-control" id="member_mobile" name="mobile" maxlength="20" placeholder="Must match an existing account">
+          <p class="small et-muted mt-2 mb-0">If you used organization search above, these fields are ignored until you clear the selection.</p>
+        </div>
+        <div class="modal-footer flex-column flex-sm-row gap-2 border-top-0 pt-0">
+          <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto me-sm-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary w-100 w-sm-auto px-4"><i class="bi bi-plus-lg me-1"></i>Add member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <section class="mb-5" id="pool">
-  <h2 class="h4 fw-bold mb-1">Pool</h2>
-  <p class="small et-muted mb-4">Log cash or transfers whenever someone adds money for this event.</p>
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
+    <div>
+      <h2 class="h5 fw-bold mb-0">Pool</h2>
+      <p class="small et-muted mb-0">Contributions for this event</p>
+    </div>
+    {% if pool_count %}
+    <span class="small fw-semibold text-nowrap">{{ pool_count }} · {{ pool_total | money }}</span>
+    {% endif %}
+  </div>
 
   {% if contributions %}
-  <div class="et-table-wrap mb-4">
+  <button class="btn btn-outline-secondary btn-sm w-100 d-flex align-items-center justify-content-between gap-2 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#poolHistory" aria-expanded="false" aria-controls="poolHistory">
+    <span><i class="bi bi-list-ul me-1"></i>Pool history</span>
+    <span class="et-muted small">{{ pool_total | money }} total</span>
+  </button>
+  <div class="collapse" id="poolHistory">
+  <div class="et-table-wrap mb-3">
     <div class="table-responsive">
-      <table class="table table-hover align-middle">
+      <table class="table table-hover align-middle table-sm">
         <thead><tr><th>When</th><th>Member</th><th class="text-end">Amount</th><th>Note</th><th class="text-end">Actions</th></tr></thead>
         <tbody>
           {% for c in contributions %}
@@ -284,18 +334,19 @@
       </table>
     </div>
   </div>
+  </div>
   {% else %}
-  <div class="et-empty mb-4 py-4">
+  <div class="et-empty mb-3 py-3">
     <div class="et-empty-icon"><i class="bi bi-piggy-bank"></i></div>
-    <p class="et-muted mb-0">No contributions recorded yet.</p>
+    <p class="et-muted mb-0 small">No pool entries yet.</p>
   </div>
   {% endif %}
 
   {% if members %}
-  <form method="post" action="/events/{{ event.id }}/contributions#pool" class="et-form-panel">
+  <form method="post" action="/events/{{ event.id }}/contributions#pool" class="et-form-panel mt-2">
     <h3 class="h6 fw-bold mb-3">Add to pool</h3>
     <div class="row g-3">
-      <div class="col-md-4">
+      <div class="col-12 col-md-4">
         <label class="form-label small fw-semibold" for="c_member">Member</label>
         <select class="form-select" name="member_id" id="c_member" required>
           {% for m in members %}
@@ -303,18 +354,18 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-6 col-md-3">
         <label class="form-label small fw-semibold" for="c_amount">Amount</label>
         <div class="input-group">
           <span class="input-group-text">₹</span>
           <input class="form-control" type="number" name="amount" id="c_amount" min="0.01" step="0.01" required placeholder="0.00">
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-12 col-md-3">
         <label class="form-label small fw-semibold" for="c_note">Note <span class="fw-normal et-muted">(optional)</span></label>
         <input class="form-control" type="text" name="note" id="c_note" maxlength="200" placeholder="Venmo, cash…">
       </div>
-      <div class="col-md-2 d-flex align-items-end">
+      <div class="col-6 col-md-2 d-flex align-items-end">
         <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check2 me-1"></i>Add</button>
       </div>
     </div>
@@ -323,21 +374,19 @@
 </section>
 
 <section class="mb-5" id="expenses">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-    <div>
-      <h2 class="h4 fw-bold mb-1">Expenses</h2>
-      <p class="small et-muted mb-0">Newest first. Open a row to see how the total was split.</p>
-    </div>
-    <div class="d-flex flex-wrap gap-2">
-      <a href="/events/{{ event.id }}/export.xlsx" class="btn btn-outline-secondary btn-lg shadow-sm">
-        <i class="bi bi-file-earmark-spreadsheet me-2"></i>Excel report
-      </a>
-      {% if members %}
-      <button type="button" class="btn btn-primary btn-lg shadow-sm" data-bs-toggle="modal" data-bs-target="#modalExpense">
-        <i class="bi bi-receipt-cutoff me-2"></i>Add expense
-      </button>
-      {% endif %}
-    </div>
+  <div class="mb-3">
+    <h2 class="h5 fw-bold mb-1">Expenses</h2>
+    <p class="small et-muted mb-0">Tap a row for split detail.</p>
+  </div>
+  <div class="d-grid d-sm-flex gap-2 mb-3">
+    <a href="/events/{{ event.id }}/export.xlsx" class="btn btn-outline-secondary order-sm-0">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i><span class="d-none d-sm-inline">Excel </span>Report
+    </a>
+    {% if members %}
+    <button type="button" class="btn btn-primary order-sm-1" data-bs-toggle="modal" data-bs-target="#modalExpense">
+      <i class="bi bi-receipt-cutoff me-1"></i>Add expense
+    </button>
+    {% endif %}
   </div>
 
   {% if expenses %}
@@ -384,13 +433,12 @@
   {% else %}
   <div class="et-empty mb-4">
     <div class="et-empty-icon"><i class="bi bi-receipt"></i></div>
-    <p class="et-muted mb-2">No expenses yet. When you add one, you will assign each person an amount or a % of the total.</p>
-    <p class="small et-muted mb-3">You can still download an Excel report with balances, pool entries, and split detail.</p>
-    <div class="d-flex flex-wrap gap-2 justify-content-center">
-      <a href="/events/{{ event.id }}/export.xlsx" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Excel report</a>
+    <p class="et-muted mb-3 small">No expenses yet.</p>
+    <div class="d-grid d-sm-flex gap-2 justify-content-center">
+      <a href="/events/{{ event.id }}/export.xlsx" class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel report</a>
       {% if members %}
-      <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalExpense">
-        <i class="bi bi-plus-lg me-2"></i>Add the first expense
+      <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalExpense">
+        <i class="bi bi-plus-lg me-1"></i>Add expense
       </button>
       {% endif %}
     </div>
@@ -398,9 +446,54 @@
   {% endif %}
 </section>
 
+{% if event_activities %}
+<section class="mb-4 et-card overflow-hidden" id="activity">
+  <button type="button" class="btn btn-link text-decoration-none text-body w-100 py-3 px-3 d-flex align-items-center justify-content-between rounded-0 collapsed et-activity-toggle"
+          data-bs-toggle="collapse" data-bs-target="#activityCollapse" aria-expanded="false" aria-controls="activityCollapse">
+    <span class="fw-semibold"><i class="bi bi-clock-history me-2 text-secondary"></i>Activity</span>
+    <span class="d-flex align-items-center gap-2">
+      <span class="badge rounded-pill bg-secondary bg-opacity-10 text-secondary border">{{ event_activities | length }}</span>
+      <i class="bi bi-chevron-down et-collapse-chevron text-muted"></i>
+    </span>
+  </button>
+  <div id="activityCollapse" class="collapse">
+    <div class="border-top px-3 pb-3 pt-1">
+      <ul class="list-group list-group-flush">
+        {% for a in event_activities %}
+        <li class="list-group-item px-0 {% if not a.read_at %}bg-light bg-opacity-50{% endif %}">
+          <span class="small text-uppercase et-muted d-block mb-1" style="font-size: 0.68rem;">{{ a.kind | replace('_', ' ') }}</span>
+          <span class="small">{{ a.summary }}</span>
+          <span class="small et-muted d-block mt-1">{{ a.created_at.strftime('%b %d, %Y · %H:%M') }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="small et-muted mb-0 mt-2"><a href="/notifications">All notifications</a></p>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<div class="modal fade" id="modalBalanceHelp" tabindex="-1" aria-labelledby="modalBalanceHelpLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-0">
+        <h2 class="modal-title fs-5" id="modalBalanceHelpLabel">How balances work</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-2">
+        <ul class="small mb-0 ps-3">
+          <li class="mb-2"><strong>Pooled</strong> is the total each person put into the event pool.</li>
+          <li class="mb-2"><strong>Spent</strong> (expended) is their share of all expenses.</li>
+          <li><strong>Left</strong> is pooled minus spent. If it is negative, they still owe their share.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if members %}
 <div class="modal fade" id="modalExpense" tabindex="-1" aria-labelledby="modalExpenseLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
     <div class="modal-content">
       <div class="modal-header">
         <h2 class="modal-title fs-5" id="modalExpenseLabel">New expense</h2>
@@ -435,10 +528,13 @@
             </div>
           </div>
 
-          <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
             <h3 class="h6 fw-bold mb-0">Who pays how much</h3>
+            <button class="btn btn-sm btn-outline-secondary collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#expenseSplitHelp" aria-expanded="false">Help</button>
           </div>
-          <p class="small et-muted mb-3">Each line: pick a person, then either an <strong>exact rupee</strong> share or a <strong>percent of this expense total</strong>. All lines together must equal the total above. Use <strong>Split equally</strong> to fill one line per member with the total divided evenly (extra paise go to the first members so it adds up exactly). When you <strong>add or remove a line</strong>, shares are <strong>re-split evenly</strong> across the lines that remain (when the total above is a valid amount).</p>
+          <div class="collapse small et-muted mb-3" id="expenseSplitHelp">
+            Each line: pick a person, then either an <strong>exact rupee</strong> share or a <strong>percent of this expense total</strong>. All lines together must equal the total above. Use <strong>Split equally</strong> to fill one line per member with the total divided evenly (extra paise go to the first members so it adds up exactly). When you <strong>add or remove a line</strong>, shares are <strong>re-split evenly</strong> across the lines that remain (when the total above is a valid amount).
+          </div>
           <div id="split-rows" class="mb-2"></div>
           <div class="d-flex flex-wrap gap-2 mb-2">
             <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" id="btn-split-equal" title="Divide the total evenly across everyone on this event">
@@ -450,9 +546,9 @@
           </div>
           <input type="hidden" name="splits_json" id="splits_json" value="[]">
         </div>
-        <div class="modal-footer flex-wrap gap-2">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check2-circle me-2"></i>Save expense</button>
+        <div class="modal-footer flex-column flex-sm-row gap-2">
+          <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary w-100 w-sm-auto px-4"><i class="bi bi-check2-circle me-2"></i>Save expense</button>
         </div>
       </form>
     </div>
@@ -464,6 +560,201 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function () {
+  const eventId = {{ event.id }};
+  const searchEl = document.getElementById('om_search');
+  const suggEl = document.getElementById('om_suggestions');
+  const hiddenUid = document.getElementById('om_from_org_user_id');
+  const btnClear = document.getElementById('om_clear_pick');
+  const btnAddSel = document.getElementById('om_btn_add_selected');
+  const formAdd = document.getElementById('form-add-event-member');
+  const nameEl = document.getElementById('member_name');
+  const mobEl = document.getElementById('member_mobile');
+  const clientErr = document.getElementById('om_client_error');
+  const modalAdd = document.getElementById('modalAddMember');
+  if (!searchEl || !suggEl || !formAdd) return;
+
+  let debounceTimer = null;
+  let lastLabel = '';
+
+  function hideClientErr() {
+    if (!clientErr) return;
+    clientErr.classList.add('d-none');
+    clientErr.textContent = '';
+  }
+
+  function showClientErr(msg) {
+    if (!clientErr) return;
+    clientErr.textContent = msg;
+    clientErr.classList.remove('d-none');
+  }
+
+  function hideSuggs() {
+    suggEl.classList.add('d-none');
+    suggEl.innerHTML = '';
+  }
+
+  function setAddSelectedEnabled(on) {
+    if (btnAddSel) btnAddSel.disabled = !on;
+  }
+
+  function clearPick() {
+    hiddenUid.value = '';
+    searchEl.value = '';
+    lastLabel = '';
+    btnClear.disabled = true;
+    setAddSelectedEnabled(false);
+    hideSuggs();
+    hideClientErr();
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function parseFetchError(r, bodyText) {
+    try {
+      const j = JSON.parse(bodyText);
+      const d = j.detail;
+      if (typeof d === 'string') return d;
+      if (Array.isArray(d)) return d.map((x) => x.msg || JSON.stringify(x)).join(' ');
+    } catch (_) {}
+    return r.status === 403 ? 'You do not have access to load suggestions.' : 'Could not load suggestions (' + r.status + ').';
+  }
+
+  async function fetchSuggs(q) {
+    const url = '/events/' + eventId + '/members/suggest?q=' + encodeURIComponent(q);
+    const r = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    const t = await r.text();
+    if (!r.ok) throw new Error(parseFetchError(r, t));
+    return JSON.parse(t);
+  }
+
+  function applySelection(row) {
+    hiddenUid.value = String(row.user_id);
+    lastLabel = row.full_name + ' · ' + row.mobile;
+    searchEl.value = lastLabel;
+    btnClear.disabled = false;
+    setAddSelectedEnabled(true);
+    hideSuggs();
+    hideClientErr();
+  }
+
+  function submitOrgUser(row) {
+    hiddenUid.value = String(row.user_id);
+    if (nameEl) nameEl.value = '';
+    if (mobEl) mobEl.value = '';
+    hideClientErr();
+    formAdd.requestSubmit();
+  }
+
+  function renderSuggs(rows, q) {
+    suggEl.innerHTML = '';
+    if (!rows.length) {
+      const li = document.createElement('li');
+      li.className = 'list-group-item small et-muted';
+      li.textContent = q.trim()
+        ? 'No one in this organization matches that search, or they are already on this event.'
+        : 'Type to search, or everyone from this organization may already be on this event.';
+      suggEl.appendChild(li);
+    } else {
+      rows.forEach((row) => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex align-items-center gap-2 py-2 px-3 et-suggest-row';
+
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'btn btn-link text-start text-decoration-none p-0 flex-grow-1 min-w-0 text-body';
+        pick.setAttribute('role', 'option');
+        pick.innerHTML =
+          '<span class="fw-medium">' +
+          esc(row.full_name) +
+          '</span><span class="d-block small et-muted">' +
+          esc(row.mobile) +
+          '</span>';
+        pick.addEventListener('click', () => applySelection(row));
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn-primary btn-sm flex-shrink-0';
+        addBtn.textContent = 'Add';
+        addBtn.setAttribute('aria-label', 'Add ' + row.full_name);
+        addBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          submitOrgUser(row);
+        });
+
+        li.appendChild(pick);
+        li.appendChild(addBtn);
+        suggEl.appendChild(li);
+      });
+    }
+    suggEl.classList.remove('d-none');
+  }
+
+  searchEl.addEventListener('input', () => {
+    if (hiddenUid.value && searchEl.value !== lastLabel) {
+      hiddenUid.value = '';
+      btnClear.disabled = true;
+      setAddSelectedEnabled(false);
+    }
+    const q = searchEl.value;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+      try {
+        const rows = await fetchSuggs(q);
+        renderSuggs(rows, q);
+      } catch (e) {
+        suggEl.innerHTML =
+          '<li class="list-group-item list-group-item-danger small">' +
+          esc(e.message || String(e)) +
+          '</li>';
+        suggEl.classList.remove('d-none');
+      }
+    }, 200);
+  });
+
+  btnClear.addEventListener('click', clearPick);
+
+  if (btnAddSel) {
+    btnAddSel.addEventListener('click', () => {
+      if (!(hiddenUid.value || '').trim()) return;
+      hideClientErr();
+      formAdd.requestSubmit();
+    });
+  }
+
+  if (modalAdd) {
+    modalAdd.addEventListener('hidden.bs.modal', () => {
+      clearPick();
+      if (nameEl) nameEl.value = '';
+      if (mobEl) mobEl.value = '';
+    });
+  }
+
+  document.addEventListener('click', (ev) => {
+    if (modalAdd && modalAdd.classList.contains('show') && formAdd && !formAdd.contains(ev.target)) {
+      hideSuggs();
+    }
+  });
+
+  formAdd.addEventListener('submit', (ev) => {
+    hideClientErr();
+    const uid = (hiddenUid.value || '').trim();
+    const n = (nameEl && nameEl.value) ? nameEl.value.trim() : '';
+    const m = (mobEl && mobEl.value) ? mobEl.value.trim() : '';
+    if (!uid && !n && !m) {
+      ev.preventDefault();
+      showClientErr('Choose someone from the organization list, or enter a display name and/or a registered mobile number.');
+      return;
+    }
+  });
+})();
+</script>
 {% if members %}
 <script>
   const MEMBERS = {{ members_opts | tojson }};
@@ -492,23 +783,23 @@
     const valAttr = (value != null && value !== '') ? ` value="${value}"` : '';
     return `
       <div class="split-row" data-split-row>
-        <div class="row g-2 align-items-end">
-          <div class="col-md-5">
+          <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-5">
             <label class="form-label small fw-semibold mb-1">Member</label>
             <select class="form-select split-member" required>${opts}</select>
           </div>
-          <div class="col-md-3">
+          <div class="col-12 col-md-3">
             <label class="form-label small fw-semibold mb-1">Type</label>
             <select class="form-select split-mode">
               <option value="amount"${amtSel}>Exact ₹</option>
               <option value="percent"${pctSel}>% of total</option>
             </select>
           </div>
-          <div class="col-md-3">
+          <div class="col-12 col-md-3">
             <label class="form-label small fw-semibold mb-1">Value</label>
             <input type="number" class="form-control split-value" min="0" step="0.01" placeholder="0"${valAttr}>
           </div>
-          <div class="col-md-1">
+          <div class="col-12 col-md-1">
             <label class="form-label small d-none d-md-block mb-1">&nbsp;</label>
             <button type="button" class="btn btn-outline-danger w-100 split-remove" title="Remove line"><i class="bi bi-trash3"></i></button>
           </div>

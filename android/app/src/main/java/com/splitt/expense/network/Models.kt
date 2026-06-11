@@ -53,8 +53,15 @@ data class MemberRead(
 )
 
 data class MemberCreateRequest(
-    val name: String,
+    val name: String = "",
     val mobile: String? = null,
+    @SerializedName("from_org_user_id") val fromOrgUserId: Long? = null,
+)
+
+data class OrgMemberSuggestion(
+    @SerializedName("user_id") val userId: Long,
+    @SerializedName("full_name") val fullName: String,
+    val mobile: String,
 )
 
 data class ContributionCreateRequest(
