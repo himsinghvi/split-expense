@@ -176,6 +176,9 @@ def get_organization(db: Session, org_id: int) -> Organization | None:
             joinedload(Organization.org_contributions).joinedload(
                 OrganizationContribution.user
             ),
+            joinedload(Organization.org_contributions).joinedload(
+                OrganizationContribution.expense
+            ),
         )
     ).unique().scalar_one_or_none()
 
@@ -565,6 +568,24 @@ def create_expense(
         db.add(ExpenseSplit(expense_id=exp.id, member_id=mid, amount=amt))
     db.flush()
     ev = db.get(Event, event_id)
+    if actor_user_id and ev and ev.organization_id:
+        if user_in_organization(db, actor_user_id, ev.organization_id):
+            date_s = (
+                data.expense_date.isoformat()
+                if hasattr(data.expense_date, "isoformat")
+                else str(data.expense_date)
+            )
+            db.add(
+                OrganizationContribution(
+                    organization_id=ev.organization_id,
+                    user_id=actor_user_id,
+                    amount=total,
+                    note=f'Fronted expense: "{exp.title}" ({date_s})',
+                    created_by_user_id=actor_user_id,
+                    expense_id=exp.id,
+                )
+            )
+            db.flush()
     if ev:
         uids = list(dict.fromkeys(event_linked_user_ids(db, event_id)))
         if not uids and actor_user_id:
@@ -599,6 +620,7 @@ def create_expense(
                 f'(your share ₹{share_fmt}) in "{ev.name}"'
             )
 
+        total_fmt = format(total, ".2f")
         emit_activity(
             db,
             recipient_user_ids=uids,
@@ -606,12 +628,78 @@ def create_expense(
             event_id=event_id,
             actor_user_id=actor_user_id,
             kind="expense_added",
-            summary=f'{aname} added expense "{exp.title}" in "{ev.name}"',
+            summary=(
+                f'{aname} added expense "{exp.title}" in "{ev.name}" '
+                f"(₹{total_fmt} to org pool in {aname}'s name)"
+            ),
             summaries_by_user=summaries_by_user,
         )
     db.commit()
     db.refresh(exp)
     return exp
+
+
+def backfill_expense_linked_org_contributions(db: Session) -> int:
+    """Create missing org-pool rows for expenses created before expense↔pool linking.
+
+    For each expense, the **full bill** is credited in the org pool to the person who
+    logged the expense (`created_by_user_id`), falling back to the event creator when
+    that column was never set. Skips rows that already have `expense_id` set, expenses
+    with no attributable user, or users not in the organization.
+
+    Idempotent: safe to run on every app startup.
+    """
+    rows = db.execute(
+        select(Expense, Event.organization_id, Event.created_by_user_id).join(
+            Event, Expense.event_id == Event.id
+        )
+    ).all()
+
+    linked_ids = set(
+        db.scalars(
+            select(OrganizationContribution.expense_id).where(
+                OrganizationContribution.expense_id.isnot(None)
+            )
+        ).all()
+    )
+
+    created = 0
+    for exp, org_id, event_creator_id in rows:
+        if exp.id in linked_ids:
+            continue
+        amt = Decimal(str(exp.amount_total or 0))
+        if amt <= 0:
+            continue
+        lender_id = exp.created_by_user_id
+        if lender_id is None:
+            lender_id = event_creator_id
+        if lender_id is None:
+            continue
+        if not user_in_organization(db, lender_id, org_id):
+            continue
+        date_s = (
+            exp.expense_date.isoformat()
+            if hasattr(exp.expense_date, "isoformat")
+            else str(exp.expense_date)
+        )
+        db.add(
+            OrganizationContribution(
+                organization_id=org_id,
+                user_id=lender_id,
+                amount=exp.amount_total,
+                note=f'Fronted expense: "{exp.title}" ({date_s})',
+                created_by_user_id=lender_id,
+                expense_id=exp.id,
+            )
+        )
+        try:
+            db.commit()
+            created += 1
+            linked_ids.add(exp.id)
+        except IntegrityError:
+            db.rollback()
+
+    return created
 
 
 def _can_manage_expense(exp: Expense, acting_user_id: int, db: Session) -> bool:
@@ -624,6 +712,8 @@ def _can_manage_expense(exp: Expense, acting_user_id: int, db: Session) -> bool:
 def _can_manage_org_contribution(
     c: OrganizationContribution, acting_user_id: int, db: Session
 ) -> bool:
+    if c.expense_id is not None:
+        return False
     if c.created_by_user_id is not None:
         return c.created_by_user_id == acting_user_id
     org = db.get(Organization, c.organization_id)
@@ -813,6 +903,10 @@ def update_org_contribution(
     c = db.get(OrganizationContribution, contribution_id)
     if not c:
         raise ValueError("Pool entry not found.")
+    if c.expense_id is not None:
+        raise PermissionError(
+            "This pool line is tied to an expense; edit that expense instead."
+        )
     if not user_in_organization(db, acting_user_id, c.organization_id):
         raise PermissionError("Not allowed.")
     if not _can_manage_org_contribution(c, acting_user_id, db):
@@ -830,6 +924,10 @@ def delete_org_contribution(db: Session, contribution_id: int, acting_user_id: i
     c = db.get(OrganizationContribution, contribution_id)
     if not c:
         raise ValueError("Pool entry not found.")
+    if c.expense_id is not None:
+        raise PermissionError(
+            "This pool line is tied to an expense; delete that expense instead."
+        )
     if not user_in_organization(db, acting_user_id, c.organization_id):
         raise PermissionError("Not allowed.")
     if not _can_manage_org_contribution(c, acting_user_id, db):
@@ -869,6 +967,19 @@ def update_expense(
     db.execute(delete(ExpenseSplit).where(ExpenseSplit.expense_id == expense_id))
     for mid, amt in amounts.items():
         db.add(ExpenseSplit(expense_id=exp.id, member_id=mid, amount=amt))
+    contrib = db.scalar(
+        select(OrganizationContribution).where(
+            OrganizationContribution.expense_id == expense_id
+        )
+    )
+    if contrib:
+        date_s = (
+            data.expense_date.isoformat()
+            if hasattr(data.expense_date, "isoformat")
+            else str(data.expense_date)
+        )
+        contrib.amount = total
+        contrib.note = f'Fronted expense: "{data.title.strip()}" ({date_s})'
     db.commit()
     db.refresh(exp)
     return exp

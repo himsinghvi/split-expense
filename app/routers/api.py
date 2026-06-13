@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import activity_service, auth_utils, excel_export, services
 from app.deps import get_current_user_api
@@ -89,6 +89,7 @@ def _event_read_with_pool(db: Session, ev: Event, *, pool: Decimal | None = None
 
 
 def _org_pool_entry_read(c: OrganizationContribution) -> OrgPoolContributionRead:
+    ev_id = c.expense.event_id if c.expense is not None else None
     return OrgPoolContributionRead(
         id=c.id,
         organization_id=c.organization_id,
@@ -97,6 +98,8 @@ def _org_pool_entry_read(c: OrganizationContribution) -> OrgPoolContributionRead
         note=c.note,
         created_at=c.created_at.isoformat(),
         created_by_user_id=c.created_by_user_id,
+        expense_id=c.expense_id,
+        event_id=ev_id,
     )
 
 
@@ -411,8 +414,10 @@ def api_list_org_contributions(
         db.scalars(
             select(OrganizationContribution)
             .where(OrganizationContribution.organization_id == org_id)
+            .options(joinedload(OrganizationContribution.expense))
             .order_by(OrganizationContribution.created_at.desc())
-        ).all()
+        ).unique()
+        .all()
     )
     return [_org_pool_entry_read(c) for c in rows]
 

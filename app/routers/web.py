@@ -135,6 +135,7 @@ def page_org_detail(
     for c in sorted(org.org_contributions or [], key=lambda x: x.created_at, reverse=True):
         u = c.user
         uname = ((u.full_name or "").strip() or u.mobile) if u else str(c.user_id)
+        ev_for_row = c.expense.event_id if c.expense else None
         contrib_rows.append(
             {
                 "id": c.id,
@@ -143,6 +144,8 @@ def page_org_detail(
                 "amount": c.amount,
                 "note": c.note,
                 "created_at": c.created_at,
+                "expense_id": c.expense_id,
+                "event_id": ev_for_row,
                 "can_manage": services.user_can_manage_org_contribution(db, c.id, uid),
             }
         )

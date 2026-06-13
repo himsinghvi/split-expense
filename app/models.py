@@ -78,9 +78,18 @@ class OrganizationContribution(Base):
         ForeignKey("users.id"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expense_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expenses.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
 
     organization: Mapped["Organization"] = relationship(back_populates="org_contributions")
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    expense: Mapped["Expense | None"] = relationship(
+        "Expense", foreign_keys=[expense_id], viewonly=True
+    )
 
 
 class OrganizationMember(Base):
