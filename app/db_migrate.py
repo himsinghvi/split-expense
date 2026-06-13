@@ -1,8 +1,12 @@
-"""Lightweight SQLite migrations for additive columns (no Alembic)."""
+"""Lightweight SQLite migrations for additive columns (no Alembic).
+
+Also applies critical cross-dialect patches: ``create_all`` does not alter existing
+tables, so Postgres (e.g. Vercel + Neon) needs explicit ``ALTER TABLE`` for new columns.
+"""
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 
@@ -227,3 +231,33 @@ def run_sqlite_migrations(engine: Engine) -> None:
                     )
                 )
             conn.execute(text("DROP TABLE IF EXISTS contributions"))
+
+
+def ensure_organization_contribution_expense_id(engine: Engine) -> None:
+    """Ensure ``organization_contributions.expense_id`` exists (Postgres + SQLite).
+
+    ``Base.metadata.create_all`` only creates missing *tables*; it will not add a new
+    column to an existing table. Without this, production DBs miss ``expense_id`` and
+    startup code that touches that column crashes the serverless worker.
+    """
+    insp = inspect(engine)
+    if not insp.has_table("organization_contributions"):
+        return
+    cols = {c["name"] for c in insp.get_columns("organization_contributions")}
+    with engine.begin() as conn:
+        if "expense_id" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE organization_contributions ADD COLUMN expense_id INTEGER "
+                    "REFERENCES expenses(id) ON DELETE CASCADE"
+                )
+            )
+        conn.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_organization_contributions_expense_id
+                ON organization_contributions (expense_id)
+                WHERE expense_id IS NOT NULL
+                """
+            )
+        )

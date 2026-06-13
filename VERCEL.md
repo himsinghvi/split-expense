@@ -31,7 +31,7 @@ To test against Postgres locally, set `DATABASE_URL` to the same Neon (or local)
 
 ## 4. Migrations
 
-`app/main.py` runs `Base.metadata.create_all` on startup. `app/db_migrate.py` only applies **SQLite** additive migrations; on Postgres, `create_all` defines the schema for a fresh database.
+`app/main.py` runs `Base.metadata.create_all` on startup. `app/db_migrate.py` applies **SQLite-only** legacy migrations, then **`ensure_organization_contribution_expense_id`** runs on **every** database (including Postgres). That matters because `create_all` does **not** add new columns to tables that already exist—without the patch, an older Neon schema can miss `organization_contributions.expense_id` and the app will crash on cold start when backfill or queries use that column.
 
 ## 5. Static files
 

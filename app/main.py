@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,7 +8,10 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SESSION_SECRET
 from app.database import Base, SessionLocal, engine
-from app.db_migrate import run_sqlite_migrations
+from app.db_migrate import (
+    ensure_organization_contribution_expense_id,
+    run_sqlite_migrations,
+)
 from app import services
 from app.middleware_unread import UnreadNotificationsMiddleware
 from app.models import (  # noqa: F401
@@ -25,11 +29,23 @@ from app.routers import api as api_router
 from app.routers import auth as auth_router
 from app.routers import web as web_router
 
+logger = logging.getLogger(__name__)
+
 Base.metadata.create_all(bind=engine)
 run_sqlite_migrations(engine)
+ensure_organization_contribution_expense_id(engine)
+
 _startup_db = SessionLocal()
 try:
-    services.backfill_expense_linked_org_contributions(_startup_db)
+    n = services.backfill_expense_linked_org_contributions(_startup_db)
+    if n:
+        logger.info("Backfilled %s expense-linked org pool rows", n)
+except Exception:
+    logger.exception("Expense pool backfill failed; continuing without backfill")
+    try:
+        _startup_db.rollback()
+    except Exception:
+        pass
 finally:
     _startup_db.close()
 
