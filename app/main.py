@@ -6,8 +6,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import SESSION_SECRET
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.db_migrate import run_sqlite_migrations
+from app import services
 from app.middleware_unread import UnreadNotificationsMiddleware
 from app.models import (  # noqa: F401
     Activity,
@@ -26,6 +27,11 @@ from app.routers import web as web_router
 
 Base.metadata.create_all(bind=engine)
 run_sqlite_migrations(engine)
+_startup_db = SessionLocal()
+try:
+    services.backfill_expense_linked_org_contributions(_startup_db)
+finally:
+    _startup_db.close()
 
 app = FastAPI(
     title="Group Expense Tracker",

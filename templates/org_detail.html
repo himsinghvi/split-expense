@@ -139,7 +139,15 @@
             <td class="text-nowrap small et-muted">{{ c.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
             <td class="fw-medium">{{ c.user_name }}</td>
             <td class="text-end fw-bold text-money-positive">{{ c.amount | money }}</td>
-            <td class="small et-muted">{{ c.note or '—' }}</td>
+            <td class="small et-muted">
+              {{ c.note or '—' }}
+              {% if c.expense_id and c.event_id %}
+              <span class="d-block mt-1">
+                <span class="badge rounded-pill bg-secondary bg-opacity-10 text-secondary border">From expense</span>
+                <a href="/events/{{ c.event_id }}" class="ms-1">Open event</a>
+              </span>
+              {% endif %}
+            </td>
             <td class="text-end text-nowrap">
               {% if c.can_manage %}
               <button type="button" class="btn btn-link btn-sm p-0 me-2" data-bs-toggle="collapse" data-bs-target="#editContrib{{ c.id }}">Edit</button>

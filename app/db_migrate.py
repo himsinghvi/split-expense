@@ -57,6 +57,24 @@ def run_sqlite_migrations(engine: Engine) -> None:
             "created_by_user_id",
             "INTEGER REFERENCES users(id)",
         )
+        # SQLite rejects UNIQUE on ADD COLUMN; enforce with a partial unique index instead.
+        if _table_exists(conn, "organization_contributions"):
+            _add_column_if_missing(
+                conn,
+                "organization_contributions",
+                "expense_id",
+                "INTEGER REFERENCES expenses(id) ON DELETE CASCADE",
+            )
+            if "expense_id" in _table_columns(conn, "organization_contributions"):
+                conn.execute(
+                    text(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_organization_contributions_expense_id
+                        ON organization_contributions (expense_id)
+                        WHERE expense_id IS NOT NULL
+                        """
+                    )
+                )
 
         # Backfill organizations: first membership row per org.
         conn.execute(

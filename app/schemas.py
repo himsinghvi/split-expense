@@ -100,6 +100,8 @@ class OrgPoolContributionRead(BaseModel):
     note: Optional[str]
     created_at: str
     created_by_user_id: Optional[int] = None
+    expense_id: Optional[int] = None
+    event_id: Optional[int] = None
 
 
 class OrgPoolContributionUpdate(BaseModel):
