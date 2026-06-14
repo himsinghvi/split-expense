@@ -96,6 +96,8 @@ data class ExpenseCreateRequest(
     @SerializedName("amount_total") val amountTotal: BigDecimal,
     @SerializedName("expense_date") val expenseDate: String,
     val splits: List<ExpenseSplitInputDto>,
+    @SerializedName("pool_creditor_member_id") val poolCreditorMemberId: Long? = null,
+    @SerializedName("pool_credit_user_id") val poolCreditUserId: Long? = null,
 )
 
 data class ExpenseSplitRead(
@@ -112,6 +114,7 @@ data class ExpenseRead(
     @SerializedName("amount_total") val amountTotal: BigDecimal,
     @SerializedName("expense_date") val expenseDate: String,
     val splits: List<ExpenseSplitRead> = emptyList(),
+    @SerializedName("pool_credit_user_id") val poolCreditUserId: Long? = null,
 )
 
 data class MemberBalanceRead(

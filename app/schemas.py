@@ -130,6 +130,14 @@ class ExpenseCreate(BaseModel):
     amount_total: Decimal = money_positive()
     expense_date: date
     splits: list[ExpenseSplitInput]
+    pool_creditor_member_id: int | None = Field(
+        default=None,
+        description="Event member who receives org pool credit for the full bill; takes precedence over pool_credit_user_id.",
+    )
+    pool_credit_user_id: int | None = Field(
+        default=None,
+        description="Org pool credits this user instead of the person logging the expense (API); ignored if pool_creditor_member_id is set.",
+    )
 
 
 class ExpenseSplitRead(BaseModel):
@@ -147,6 +155,7 @@ class ExpenseRead(BaseModel):
     expense_date: date
     splits: list[ExpenseSplitRead] = Field(default_factory=list)
     created_by_user_id: Optional[int] = None
+    pool_credit_user_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

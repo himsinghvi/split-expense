@@ -441,6 +441,12 @@
           <div class="collapse small et-muted mb-3" id="expenseSplitHelp">
             Each line: pick a person, then either an <strong>exact rupee</strong> share or a <strong>percent of this expense total</strong>. All lines together must equal the total above. Use <strong>Split equally</strong> to fill one line per member with the total divided evenly (extra paise go to the first members so it adds up exactly). When you <strong>add or remove a line</strong>, shares are <strong>re-split evenly</strong> across the lines that remain (when the total above is a valid amount).
           </div>
+          <p class="small fw-semibold mb-1">Organization pool — who fronted this bill?</p>
+          <p class="small et-muted mb-2">The full amount is credited to that person’s <a href="/orgs/{{ organization.id }}#pool">org pool</a>. Use the <strong>radio on a split row</strong> (only members with a linked account). Leave the default to credit <strong>you</strong> (the person saving).</p>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="radio" name="pool_creditor_member_id" id="pool_cred_default" value="" checked>
+            <label class="form-check-label small" for="pool_cred_default">Person saving this expense (default)</label>
+          </div>
           <div id="split-rows" class="mb-2"></div>
           <div class="d-flex flex-wrap gap-2 mb-2">
             <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" id="btn-split-equal" title="Divide the total evenly across everyone on this event">
@@ -671,6 +677,21 @@
   const form = document.getElementById('expense-form');
   const alertEl = document.getElementById('expense-form-alert');
 
+  function memberIdNum(mid) {
+    if (mid == null || mid === '') return NaN;
+    const n = parseInt(String(mid), 10);
+    return Number.isNaN(n) ? NaN : n;
+  }
+
+  function memberHasUserId(mid) {
+    const id = memberIdNum(mid);
+    if (Number.isNaN(id)) return false;
+    const m = MEMBERS.find(
+      (x) => memberIdNum(x.id) === id || String(x.id) === String(mid)
+    );
+    return !!(m && m.user_id != null && m.user_id !== '');
+  }
+
   function showExpenseAlert(msg) {
     alertEl.textContent = msg;
     alertEl.classList.remove('d-none');
@@ -678,19 +699,32 @@
 
   function splitRowHtml(preset) {
     preset = preset || {};
-    const mid = preset.memberId;
+    let mid = preset.memberId;
+    if (mid != null && mid !== '') mid = memberIdNum(mid);
+    else mid = null;
+    if (mid == null && MEMBERS.length) mid = memberIdNum(MEMBERS[0].id);
     const mode = preset.mode || 'amount';
     const value = preset.value;
     const opts = MEMBERS.map(m =>
-      `<option value="${m.id}"${m.id == mid ? ' selected' : ''}>${String(m.name).replace(/</g, '&lt;')}</option>`
+      `<option value="${m.id}"${memberIdNum(m.id) === mid ? ' selected' : ''}>${String(m.name).replace(/</g, '&lt;')}</option>`
     ).join('');
     const amtSel = mode === 'amount' ? ' selected' : '';
     const pctSel = mode === 'percent' ? ' selected' : '';
     const valAttr = (value != null && value !== '') ? ` value="${value}"` : '';
+    const hasUser = memberHasUserId(mid);
+    const radioDis = hasUser ? '' : ' disabled';
+    const rid = 'pool_rad_' + String(mid) + '_' + Math.random().toString(36).slice(2, 9);
+    const poolTitle = hasUser ? 'Org pool credits this member' : 'Link an account to this member to use as pool creditor';
     return `
       <div class="split-row" data-split-row>
-          <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-5">
+          <div class="row g-2 align-items-center">
+          <div class="col-auto text-center pt-md-1">
+            <label class="et-pool-radio-label" for="${rid}">
+              <input type="radio" name="pool_creditor_member_id" id="${rid}" class="form-check-input pool-creditor-radio"${radioDis} value="${mid}" title="${poolTitle}">
+            </label>
+            <span class="small et-muted d-md-none d-block mt-1">Pool</span>
+          </div>
+          <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold mb-1">Member</label>
             <select class="form-select split-member" required>${opts}</select>
           </div>
@@ -773,8 +807,28 @@
   btnEqual.addEventListener('click', applyEqualSplit);
 
   function wireRow(row) {
+    const sel = row.querySelector('.split-member');
+    const rad = row.querySelector('.pool-creditor-radio');
+    function syncPoolRadio() {
+      if (!sel || !rad) return;
+      const mid = parseInt(sel.value, 10);
+      const hasUser = memberHasUserId(mid);
+      rad.value = String(mid);
+      rad.disabled = !hasUser;
+      if (!hasUser && rad.checked) {
+        const def = document.getElementById('pool_cred_default');
+        if (def) def.checked = true;
+      }
+    }
+    if (sel) sel.addEventListener('change', syncPoolRadio);
+    syncPoolRadio();
     row.querySelector('.split-remove').addEventListener('click', () => {
+      const was = rad && rad.checked;
       row.remove();
+      if (was) {
+        const def = document.getElementById('pool_cred_default');
+        if (def) def.checked = true;
+      }
       equalSplitAmongCurrentRows();
     });
   }

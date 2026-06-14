@@ -51,6 +51,18 @@ def _redirect_org_pool(
     return RedirectResponse(f"/orgs/{org_id}#{fragment}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _parse_pool_creditor_member_id(raw: str | None) -> int | None:
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid organization pool selection.",
+        ) from None
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     if session_user_id(request):
@@ -333,7 +345,7 @@ def page_event_detail(
     }
 
     mems = sorted(ev.members, key=lambda m: m.id)
-    members_opts = [{"id": m.id, "name": m.name} for m in mems]
+    members_opts = [{"id": m.id, "name": m.name, "user_id": m.user_id} for m in mems]
 
     event_activities = activity_service.list_for_event(db, uid, event_id, limit=40)
 
@@ -433,6 +445,7 @@ def post_expense(
     amount_total: Decimal = Form(...),
     expense_date: date = Form(...),
     splits_json: str = Form(...),
+    pool_creditor_member_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     uid = require_session_user(request)
@@ -456,12 +469,14 @@ def post_expense(
         if s.member_id not in mids:
             raise HTTPException(400, "Split references unknown member")
 
+    pcm = _parse_pool_creditor_member_id(pool_creditor_member_id)
     payload = ExpenseCreate(
         title=title.strip(),
         category=category.strip(),
         amount_total=amount_total,
         expense_date=expense_date,
         splits=splits,
+        pool_creditor_member_id=pcm,
     )
     try:
         services.create_expense(db, event_id, payload, actor_user_id=uid)
@@ -651,7 +666,14 @@ def page_edit_expense(
     if not exp:
         raise HTTPException(404, "Expense not found")
     mems = sorted(ev.members, key=lambda m: m.id)
-    members_opts = [{"id": m.id, "name": m.name} for m in mems]
+    members_opts = [{"id": m.id, "name": m.name, "user_id": m.user_id} for m in mems]
+    initial_pool_member_id = None
+    pcu = getattr(exp, "pool_credit_user_id", None)
+    if pcu is not None:
+        for m in mems:
+            if m.user_id == pcu:
+                initial_pool_member_id = m.id
+                break
     initial_splits = [
         {
             "member_id": s.member_id,
@@ -667,6 +689,7 @@ def page_edit_expense(
             "organization": ev.organization,
             "expense": exp,
             "members_opts": members_opts,
+            "initial_pool_member_id": initial_pool_member_id,
             "initial_splits": initial_splits,
             "title": f"Edit: {exp.title}",
         },
@@ -683,6 +706,7 @@ def post_edit_expense(
     amount_total: Decimal = Form(...),
     expense_date: date = Form(...),
     splits_json: str = Form(...),
+    pool_creditor_member_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     uid = require_session_user(request)
@@ -709,12 +733,14 @@ def post_edit_expense(
         if s.member_id not in mids:
             raise HTTPException(400, "Split references unknown member")
 
+    pcm = _parse_pool_creditor_member_id(pool_creditor_member_id)
     payload = ExpenseCreate(
         title=title.strip(),
         category=category.strip(),
         amount_total=amount_total,
         expense_date=expense_date,
         splits=splits,
+        pool_creditor_member_id=pcm,
     )
     try:
         services.update_expense(

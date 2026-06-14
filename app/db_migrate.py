@@ -46,6 +46,9 @@ def run_sqlite_migrations(engine: Engine) -> None:
             conn, "expenses", "created_by_user_id", "INTEGER REFERENCES users(id)"
         )
         _add_column_if_missing(
+            conn, "expenses", "pool_credit_user_id", "INTEGER REFERENCES users(id)"
+        )
+        _add_column_if_missing(
             conn, "members", "created_by_user_id", "INTEGER REFERENCES users(id)"
         )
         if _table_exists(conn, "contributions"):
@@ -259,5 +262,22 @@ def ensure_organization_contribution_expense_id(engine: Engine) -> None:
                 ON organization_contributions (expense_id)
                 WHERE expense_id IS NOT NULL
                 """
+            )
+        )
+
+
+def ensure_expense_pool_credit_user_id(engine: Engine) -> None:
+    """Ensure ``expenses.pool_credit_user_id`` exists on existing databases."""
+    insp = inspect(engine)
+    if not insp.has_table("expenses"):
+        return
+    cols = {c["name"] for c in insp.get_columns("expenses")}
+    if "pool_credit_user_id" in cols:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE expenses ADD COLUMN pool_credit_user_id INTEGER "
+                "REFERENCES users(id)"
             )
         )
