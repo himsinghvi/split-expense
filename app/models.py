@@ -174,6 +174,12 @@ class Expense(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True, index=True
     )
+    pool_credit_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+        doc="If set, org pool credit for this bill goes to this user instead of created_by.",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     event: Mapped["Event"] = relationship(back_populates="expenses")

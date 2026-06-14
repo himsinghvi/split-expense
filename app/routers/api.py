@@ -58,6 +58,7 @@ def _expense_read(e) -> ExpenseRead:
         expense_date=e.expense_date,
         splits=splits,
         created_by_user_id=getattr(e, "created_by_user_id", None),
+        pool_credit_user_id=getattr(e, "pool_credit_user_id", None),
     )
 
 

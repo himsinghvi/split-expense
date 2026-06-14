@@ -533,6 +533,79 @@ def _split_amounts(
     return out
 
 
+def _normalized_pool_credit_override(
+    db: Session,
+    event_id: int,
+    organization_id: int,
+    pool_credit_user_id: int | None,
+    default_creditor_user_id: int | None,
+) -> int | None:
+    """Return value to store on ``Expense.pool_credit_user_id`` (None = use default creditor)."""
+    if pool_credit_user_id is None:
+        return None
+    if (
+        default_creditor_user_id is not None
+        and pool_credit_user_id == default_creditor_user_id
+    ):
+        return None
+    if not user_in_organization(db, pool_credit_user_id, organization_id):
+        raise ValueError(
+            "Org pool credit must go to someone in this expense’s organization."
+        )
+    mid = db.scalar(
+        select(Member.id).where(
+            Member.event_id == event_id,
+            Member.user_id == pool_credit_user_id,
+        )
+    )
+    if mid is None:
+        raise ValueError(
+            "Pick an event member with a linked account for org pool credit."
+        )
+    return pool_credit_user_id
+
+
+def _stored_pool_credit_override(
+    db: Session,
+    event_id: int,
+    organization_id: int,
+    data: ExpenseCreate,
+    default_creditor_user_id: int | None,
+) -> int | None:
+    """Resolve ``ExpenseCreate`` pool fields to stored ``pool_credit_user_id``."""
+    override_uid: int | None = None
+    if data.pool_creditor_member_id is not None:
+        mem = db.get(Member, data.pool_creditor_member_id)
+        if not mem or mem.event_id != event_id:
+            raise ValueError("Invalid member selected for org pool credit.")
+        if mem.user_id is None:
+            raise ValueError(
+                "That member has no linked account for org pool credit."
+            )
+        split_mids = {s.member_id for s in data.splits}
+        if mem.id not in split_mids:
+            raise ValueError(
+                "Org pool credit must be for a member on one of this expense’s split lines."
+            )
+        override_uid = int(mem.user_id)
+    elif data.pool_credit_user_id is not None:
+        override_uid = data.pool_credit_user_id
+    return _normalized_pool_credit_override(
+        db,
+        event_id,
+        organization_id,
+        override_uid,
+        default_creditor_user_id,
+    )
+
+
+def _effective_org_pool_creditor_user_id(exp: Expense) -> int | None:
+    """Who receives the org-pool line for this expense (for inserts/updates/backfill)."""
+    if exp.pool_credit_user_id is not None:
+        return exp.pool_credit_user_id
+    return exp.created_by_user_id
+
+
 def create_expense(
     db: Session,
     event_id: int,
@@ -545,6 +618,10 @@ def create_expense(
     if not data.splits:
         raise ValueError("Add at least one split for this expense.")
 
+    ev = db.get(Event, event_id)
+    if not ev:
+        raise ValueError("Event not found.")
+
     amounts = _split_amounts(data.amount_total, data.splits)
     split_sum = sum(amounts.values()).quantize(Decimal("0.01"))
     total = data.amount_total.quantize(Decimal("0.01"))
@@ -554,6 +631,14 @@ def create_expense(
             "Use only amounts, or only percents for the remainder after fixed amounts."
         )
 
+    stored_pool = _stored_pool_credit_override(
+        db,
+        event_id,
+        ev.organization_id,
+        data,
+        actor_user_id,
+    )
+
     exp = Expense(
         event_id=event_id,
         title=data.title.strip(),
@@ -561,15 +646,17 @@ def create_expense(
         amount_total=data.amount_total,
         expense_date=data.expense_date,
         created_by_user_id=actor_user_id,
+        pool_credit_user_id=stored_pool,
     )
     db.add(exp)
     db.flush()
     for mid, amt in amounts.items():
         db.add(ExpenseSplit(expense_id=exp.id, member_id=mid, amount=amt))
     db.flush()
-    ev = db.get(Event, event_id)
-    if actor_user_id and ev and ev.organization_id:
-        if user_in_organization(db, actor_user_id, ev.organization_id):
+
+    pool_user = _effective_org_pool_creditor_user_id(exp)
+    if pool_user is not None and ev.organization_id:
+        if user_in_organization(db, pool_user, ev.organization_id):
             date_s = (
                 data.expense_date.isoformat()
                 if hasattr(data.expense_date, "isoformat")
@@ -578,10 +665,10 @@ def create_expense(
             db.add(
                 OrganizationContribution(
                     organization_id=ev.organization_id,
-                    user_id=actor_user_id,
+                    user_id=pool_user,
                     amount=total,
                     note=f'Fronted expense: "{exp.title}" ({date_s})',
-                    created_by_user_id=actor_user_id,
+                    created_by_user_id=pool_user,
                     expense_id=exp.id,
                 )
             )
@@ -621,6 +708,14 @@ def create_expense(
             )
 
         total_fmt = format(total, ".2f")
+        if pool_user is not None:
+            pname = user_display_name(db, pool_user)
+            summary = (
+                f'{aname} added expense "{exp.title}" in "{ev.name}" '
+                f"(₹{total_fmt} to org pool in {pname}'s name)"
+            )
+        else:
+            summary = f'{aname} added expense "{exp.title}" in "{ev.name}"'
         emit_activity(
             db,
             recipient_user_ids=uids,
@@ -628,10 +723,7 @@ def create_expense(
             event_id=event_id,
             actor_user_id=actor_user_id,
             kind="expense_added",
-            summary=(
-                f'{aname} added expense "{exp.title}" in "{ev.name}" '
-                f"(₹{total_fmt} to org pool in {aname}'s name)"
-            ),
+            summary=summary,
             summaries_by_user=summaries_by_user,
         )
     db.commit()
@@ -642,10 +734,10 @@ def create_expense(
 def backfill_expense_linked_org_contributions(db: Session) -> int:
     """Create missing org-pool rows for expenses created before expense↔pool linking.
 
-    For each expense, the **full bill** is credited in the org pool to the person who
-    logged the expense (`created_by_user_id`), falling back to the event creator when
-    that column was never set. Skips rows that already have `expense_id` set, expenses
-    with no attributable user, or users not in the organization.
+    For each expense, the **full bill** is credited in the org pool to
+    ``pool_credit_user_id`` when set, otherwise ``created_by_user_id``, falling back
+    to the event creator when those are unset. Skips rows that already have
+    ``expense_id`` set, expenses with no attributable user, or users not in the org.
 
     Idempotent: safe to run on every app startup.
     """
@@ -670,7 +762,7 @@ def backfill_expense_linked_org_contributions(db: Session) -> int:
         amt = Decimal(str(exp.amount_total or 0))
         if amt <= 0:
             continue
-        lender_id = exp.created_by_user_id
+        lender_id = _effective_org_pool_creditor_user_id(exp)
         if lender_id is None:
             lender_id = event_creator_id
         if lender_id is None:
@@ -951,6 +1043,10 @@ def update_expense(
     if not _can_manage_expense(exp, acting_user_id, db):
         raise PermissionError("Only the person who created this expense can edit it.")
 
+    ev = db.get(Event, exp.event_id)
+    if not ev:
+        raise ValueError("Event not found.")
+
     amounts = _split_amounts(data.amount_total, data.splits)
     split_sum = sum(amounts.values()).quantize(Decimal("0.01"))
     total = data.amount_total.quantize(Decimal("0.01"))
@@ -960,10 +1056,19 @@ def update_expense(
             "Use only amounts, or only percents for the remainder after fixed amounts."
         )
 
+    stored_pool = _stored_pool_credit_override(
+        db,
+        exp.event_id,
+        ev.organization_id,
+        data,
+        exp.created_by_user_id,
+    )
+
     exp.title = data.title.strip()
     exp.category = data.category.strip()
     exp.amount_total = data.amount_total
     exp.expense_date = data.expense_date
+    exp.pool_credit_user_id = stored_pool
     db.execute(delete(ExpenseSplit).where(ExpenseSplit.expense_id == expense_id))
     for mid, amt in amounts.items():
         db.add(ExpenseSplit(expense_id=exp.id, member_id=mid, amount=amt))
@@ -980,6 +1085,10 @@ def update_expense(
         )
         contrib.amount = total
         contrib.note = f'Fronted expense: "{data.title.strip()}" ({date_s})'
+        pool_user = _effective_org_pool_creditor_user_id(exp)
+        if pool_user is not None:
+            contrib.user_id = pool_user
+            contrib.created_by_user_id = pool_user
     db.commit()
     db.refresh(exp)
     return exp

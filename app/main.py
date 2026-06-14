@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import SESSION_SECRET
 from app.database import Base, SessionLocal, engine
 from app.db_migrate import (
+    ensure_expense_pool_credit_user_id,
     ensure_organization_contribution_expense_id,
     run_sqlite_migrations,
 )
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 Base.metadata.create_all(bind=engine)
 run_sqlite_migrations(engine)
 ensure_organization_contribution_expense_id(engine)
+ensure_expense_pool_credit_user_id(engine)
 
 _startup_db = SessionLocal()
 try:
